@@ -164,11 +164,13 @@ function defaultSession(): Session {
 
 const activeSession = ref<Session>(defaultSession());
 
+const localAppointments = ref<AppointmentCard[]>([...props.appointments]);
+
 const sessionOptions = computed(() =>
     SESSIONS.map((session) => ({
         value: session,
         label: `${session} (${
-            props.appointments.filter(
+            localAppointments.value.filter(
                 (appointment) => appointment.session === session,
             ).length
         })`,
@@ -176,7 +178,7 @@ const sessionOptions = computed(() =>
 );
 
 const sessionAppointments = computed<AppointmentCard[]>(() =>
-    props.appointments.filter(
+    localAppointments.value.filter(
         (appointment) => appointment.session === activeSession.value,
     ),
 );
@@ -209,7 +211,7 @@ const currentAppointment = computed<AppointmentCard | null>(() => {
     }
 
     return (
-        props.appointments.find(
+        localAppointments.value.find(
             (appointment) => appointment.id === currentId,
         ) ?? null
     );
@@ -218,6 +220,7 @@ const currentAppointment = computed<AppointmentCard | null>(() => {
 watch(
     () => props.appointments,
     (appointments) => {
+        localAppointments.value = [...appointments];
         if (!appointments.some((a) => a.session === activeSession.value)) {
             activeSession.value = defaultSession();
         }
@@ -230,6 +233,7 @@ watch(
             detailDialogVisible.value = false;
         }
     },
+    { deep: true }
 );
 
 const selectedAppointment = computed<AppointmentCard | null>(() => {
@@ -238,7 +242,7 @@ const selectedAppointment = computed<AppointmentCard | null>(() => {
     }
 
     return (
-        props.appointments.find(
+        localAppointments.value.find(
             (appointment) => appointment.id === selectedAppointmentId.value,
         ) ?? currentAppointment.value
     );
@@ -292,11 +296,29 @@ const openDetails = (appointment: AppointmentCard): void => {
 };
 
 const toggleHold = async (appointment: AppointmentCard): Promise<void> => {
+    const originalOnHold = appointment.onHold;
+    const originalHoldOrder = appointment.holdOrder;
+    
+    // Optimistic Update: Immediately toggle local state so card moves in UI instantly
+    const localApp = localAppointments.value.find((a) => a.id === appointment.id);
+    if (localApp) {
+        localApp.onHold = !originalOnHold;
+        if (localApp.onHold) {
+            const currentHolds = heldAppointments.value;
+            const maxOrder = currentHolds.length > 0 
+                ? Math.max(...currentHolds.map(h => h.holdOrder ?? 0)) 
+                : 0;
+            localApp.holdOrder = maxOrder + 1;
+        } else {
+            localApp.holdOrder = null;
+        }
+    }
+
     try {
         const { data } = await http.patch(
             toggleHoldAction(appointment.id).url,
             {
-                on_hold: !appointment.onHold,
+                on_hold: !originalOnHold,
             },
         );
 
@@ -305,6 +327,11 @@ const toggleHold = async (appointment: AppointmentCard): Promise<void> => {
             only: ['appointments', 'summary', 'currentAppointmentIds'],
         });
     } catch {
+        // Rollback local state if request fails
+        if (localApp) {
+            localApp.onHold = originalOnHold;
+            localApp.holdOrder = originalHoldOrder;
+        }
         pushToast(toast, {
             type: 'error',
             message: 'Could not update hold status. Please try again.',
