@@ -82,7 +82,7 @@ onUnmounted(() => {
 
         <!-- Live Footer -->
         <footer class="live-footer">
-            <p>© {{ new Date().getFullYear() }} Clinic Connect. Automated Live Patient Queue Board. Updates automatically every 10s.</p>
+            <p>© {{ new Date().getFullYear() }} Clinic Connect.</p>
         </footer>
     </div>
 </template>
