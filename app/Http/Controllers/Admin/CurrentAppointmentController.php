@@ -141,10 +141,8 @@ class CurrentAppointmentController extends Controller
             ]);
         }
 
-        if ($complete) {
-            $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
-            broadcast(new QueueUpdated($sessionLabel));
-        }
+        $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
+        broadcast(new QueueUpdated($sessionLabel));
 
         $toast = [
             'type' => 'success',

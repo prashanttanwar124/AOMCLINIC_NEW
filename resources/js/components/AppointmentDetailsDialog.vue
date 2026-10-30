@@ -467,20 +467,25 @@ const activeHistoryAppointment = computed<AppointmentHistoryItem | null>(() => {
 
 watch(
     () => props.appointment,
-    (appointment) => {
+    (appointment, oldAppointment) => {
         if (!appointment) {
             return;
         }
-        activeHistoryAppointmentId.value = appointment.id;
-        activeFormSectionIndex.value = 0;
+        if (appointment.id !== oldAppointment?.id) {
+            activeHistoryAppointmentId.value = appointment.id;
+            activeFormSectionIndex.value = 0;
+        }
     },
     { immediate: true },
 );
 
 watch(
     activeHistoryAppointment,
-    (historyApt) => {
+    (historyApt, oldHistoryApt) => {
         if (!historyApt) {
+            return;
+        }
+        if (historyApt.id === oldHistoryApt?.id && isDirty.value) {
             return;
         }
         formDefaults = { ...historyApt.editable };

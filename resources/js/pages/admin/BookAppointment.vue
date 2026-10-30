@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { useEchoPublic } from '@laravel/echo-vue';
 import AutoComplete from 'primevue/autocomplete';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
@@ -57,6 +58,12 @@ defineOptions({
 
 const selectedPatient = ref<any>(null);
 const patientSuggestions = ref<any[]>([]);
+
+useEchoPublic('live-queue', 'QueueUpdated', () => {
+    router.reload({
+        only: ['dateOptions'],
+    });
+});
 
 const form = useForm({
     patient_id: null as number | null,

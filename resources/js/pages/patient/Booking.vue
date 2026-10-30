@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
+import { useEchoPublic } from '@laravel/echo-vue';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Message from 'primevue/message';
@@ -56,6 +57,12 @@ defineOptions({
 });
 
 const toast = useToast();
+
+useEchoPublic('live-queue', 'QueueUpdated', () => {
+    router.reload({
+        only: ['dateOptions', 'bookingEnabled', 'noticeEnabled', 'noticeText'],
+    });
+});
 
 const form = reactive({
     patient_id: props.defaultPatientId,

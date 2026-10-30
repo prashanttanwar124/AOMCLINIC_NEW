@@ -115,6 +115,10 @@ initializeTheme();
 let isNavigating = false;
 
 router.on('before', (event) => {
+    if (event.detail.visit.only.length > 0) {
+        return;
+    }
+
     if (isNavigating) {
         event.preventDefault();
     } else {

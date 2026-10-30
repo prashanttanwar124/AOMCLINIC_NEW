@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
+import { useEchoPublic } from '@laravel/echo-vue';
 import Avatar from 'primevue/avatar';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
@@ -379,6 +380,12 @@ function onDialogSaved(): void {
         only: ['appointments', 'summary', 'currentAppointmentIds'],
     });
 }
+
+useEchoPublic('live-queue', 'QueueUpdated', () => {
+    router.reload({
+        only: ['appointments', 'summary', 'currentAppointmentIds'],
+    });
+});
 </script>
 
 <template>

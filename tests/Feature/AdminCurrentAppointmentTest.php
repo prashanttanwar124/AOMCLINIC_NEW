@@ -1,8 +1,10 @@
 <?php
 
+use App\Events\QueueUpdated;
 use App\Models\Appointment;
 use App\Models\Patient;
 use App\Models\User;
+use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('authenticated users can view today current appointments with queue summary', function () {
@@ -117,6 +119,10 @@ test('invalid date falls back to today', function () {
 });
 
 test('admin can save edited clinical details without completing', function () {
+    Event::fake([
+        QueueUpdated::class,
+    ]);
+
     $user = User::factory()->create();
     $appointmentDate = today()->toDateString();
     $appointment = Appointment::factory()->create([
@@ -149,11 +155,15 @@ test('admin can save edited clinical details without completing', function () {
         ->days_prescription->toBe(7)
         ->amount->toBe('450.00')
         ->status->toBe('pending');
+
+    Event::assertDispatched(QueueUpdated::class, function ($event) {
+        return $event->session === 'Morning';
+    });
 });
 
 test('admin can mark an appointment complete which removes it from the queue', function () {
-    Illuminate\Support\Facades\Event::fake([
-        App\Events\QueueUpdated::class,
+    Event::fake([
+        QueueUpdated::class,
     ]);
 
     $user = User::factory()->create();
@@ -192,14 +202,14 @@ test('admin can mark an appointment complete which removes it from the queue', f
         ->medication_instructions->toBe('Take with warm water')
         ->amount->toBe('300.00');
 
-    Illuminate\Support\Facades\Event::assertDispatched(App\Events\QueueUpdated::class, function ($event) {
+    Event::assertDispatched(QueueUpdated::class, function ($event) {
         return $event->session === 'Morning';
     });
 });
 
 test('admin can put an appointment on hold from the current queue', function () {
-    Illuminate\Support\Facades\Event::fake([
-        App\Events\QueueUpdated::class,
+    Event::fake([
+        QueueUpdated::class,
     ]);
 
     $user = User::factory()->create();
@@ -222,7 +232,7 @@ test('admin can put an appointment on hold from the current queue', function () 
     expect($appointment->fresh())->on_hold->toBeTrue()
         ->and($appointment->fresh()->hold_order)->toBe(1);
 
-    Illuminate\Support\Facades\Event::assertDispatched(App\Events\QueueUpdated::class, function ($event) {
+    Event::assertDispatched(QueueUpdated::class, function ($event) {
         return $event->session === 'Morning';
     });
 });
