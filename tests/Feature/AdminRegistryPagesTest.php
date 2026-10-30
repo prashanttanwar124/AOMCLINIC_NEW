@@ -72,3 +72,51 @@ test('authenticated staff can search the appointments ledger by patient name', f
             ->where('appointments.data.0.appointmentNumber', '7')
             ->where('filters.search', 'Ravi'));
 });
+
+test('authenticated staff can search patients by partial phone number, last name, or any mix of name and phone', function (string $searchQuery, string $expectedName) {
+    $user = User::factory()->create();
+
+    Patient::factory()->create([
+        'name' => 'Prashant Kumar Tanwar',
+        'phone' => '9876543210',
+        'country_calling_code' => '91',
+        'email' => 'prashant@example.com',
+    ]);
+
+    Patient::factory()->create([
+        'name' => 'Rohan Tanwar',
+        'phone' => '9123456789',
+        'country_calling_code' => '91',
+        'email' => 'rohan@example.com',
+    ]);
+
+    Patient::factory()->create([
+        'name' => 'Meera Sharma',
+        'phone' => '9988776655',
+        'country_calling_code' => '91',
+        'email' => 'meera@example.com',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.patients', ['search' => $searchQuery]))
+        ->assertSuccessful()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('admin/Patients')
+            ->has('patients.data', 1)
+            ->where('patients.data.0.name', $expectedName));
+
+    $this->actingAs($user)
+        ->getJson(route('admin.patients.search', ['query' => $searchQuery]))
+        ->assertSuccessful()
+        ->assertJsonCount(1)
+        ->assertJsonFragment(['name' => $expectedName]);
+})->with([
+    'partial phone start' => ['9876', 'Prashant Kumar Tanwar'],
+    'partial phone end' => ['3210', 'Prashant Kumar Tanwar'],
+    'first and last name skipping middle name' => ['Prashant Tanwar', 'Prashant Kumar Tanwar'],
+    'reversed last and first name' => ['Tanwar Prashant', 'Prashant Kumar Tanwar'],
+    'last name and partial phone' => ['Tanwar 3210', 'Prashant Kumar Tanwar'],
+    'partial phone and first name' => ['9876 Prashant', 'Prashant Kumar Tanwar'],
+    'other shared last name with partial phone' => ['Tanwar 6789', 'Rohan Tanwar'],
+    'last name only unique' => ['Sharma', 'Meera Sharma'],
+]);

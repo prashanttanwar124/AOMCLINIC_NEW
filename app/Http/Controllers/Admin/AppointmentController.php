@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
+use App\Models\ClinicSetting;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -30,9 +32,7 @@ class AppointmentController extends Controller
         if (filled($search)) {
             $query->where(function ($q) use ($search) {
                 $q->whereHas('patient', function ($pq) use ($search) {
-                    $pq->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
+                    $pq->search($search);
                 })
                     ->orWhere('appointment_number', 'like', "%{$search}%");
             });
@@ -226,9 +226,9 @@ class AppointmentController extends Controller
     public function receipt(Appointment $appointment): Response
     {
         $appointment->load(['patient', 'vital']);
-        $clinic = \App\Models\ClinicSetting::current();
+        $clinic = ClinicSetting::current();
 
-        $logoUrl = $clinic->logo_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($clinic->logo_path) : null;
+        $logoUrl = $clinic->logo_path ? Storage::disk('public')->url($clinic->logo_path) : null;
 
         return Inertia::render('admin/appointments/Receipt', [
             'appointment' => [

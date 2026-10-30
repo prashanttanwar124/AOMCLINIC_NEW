@@ -9,7 +9,7 @@ import SelectButton from 'primevue/selectbutton';
 import Tag from 'primevue/tag';
 import Dialog from 'primevue/dialog';
 import AutoComplete from 'primevue/autocomplete';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import AppointmentDetailsDialog from '@/components/AppointmentDetailsDialog.vue';
 import InputError from '@/components/InputError.vue';
 import { booking, dashboard } from '@/routes';
@@ -247,16 +247,44 @@ function openDetails(appointment: AppointmentCard): void {
     detailDialogVisible.value = true;
 }
 
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 function handleSearch(): void {
+    if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = null;
+    }
+
     router.get(
         patientsRoute().url,
-        { search: searchQuery.value },
+        { search: searchQuery.value.trim() || undefined },
         {
             preserveState: true,
             preserveScroll: true,
+            replace: true,
         },
     );
 }
+
+watch(searchQuery, (newVal) => {
+    if (newVal.trim() === (props.filters.search ?? '').trim()) {
+        return;
+    }
+
+    if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+    }
+
+    searchDebounceTimer = setTimeout(() => {
+        handleSearch();
+    }, 280);
+});
+
+onBeforeUnmount(() => {
+    if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+    }
+});
 
 function handleClearSearch(): void {
     searchQuery.value = '';
@@ -462,12 +490,15 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                     </div>
 
                     <div class="admin-search">
-                        <InputText
-                            v-model="searchQuery"
-                            placeholder="Search by name, ID, or phone..."
-                            class="admin-search__input"
-                            @keyup.enter="handleSearch"
-                        />
+                        <span class="patient-search-wrapper">
+                            <i class="pi pi-search patient-search-icon"></i>
+                            <InputText
+                                v-model="searchQuery"
+                                placeholder="Search name, last name, phone, or ID..."
+                                class="admin-search__input patient-search-input"
+                                @keyup.enter="handleSearch"
+                            />
+                        </span>
                         <Button
                             v-if="searchQuery"
                             icon="pi pi-times"
@@ -495,7 +526,10 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                             />
                             <div class="patient-directory-item__identity">
                                 <span class="patient-directory-item__name">{{ patient.name }}</span>
-                                <span class="patient-directory-item__id">ID #{{ patient.id }}</span>
+                                <span class="patient-directory-item__id">
+                                    ID #{{ patient.id }}
+                                    <template v-if="patient.phone"> · {{ patient.phone }}</template>
+                                </span>
                             </div>
                         </div>
                         <div class="patient-directory-item__right">
@@ -1037,6 +1071,28 @@ function unlinkAccount(patient: { id: number; name: string }): void {
 .patient-appointments-card {
     padding: 0;
     overflow: hidden;
+}
+
+.patient-search-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: 1 1 auto;
+}
+
+.patient-search-icon {
+    position: absolute;
+    left: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary-color);
+    font-size: 0.9rem;
+    z-index: 1;
+    pointer-events: none;
+}
+
+:deep(.patient-search-input) {
+    padding-left: 2.35rem !important;
 }
 
 .patient-directory-table {

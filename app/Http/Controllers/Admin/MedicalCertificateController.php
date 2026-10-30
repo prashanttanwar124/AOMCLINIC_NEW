@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreMedicalCertificateRequest;
 use App\Http\Requests\Admin\UpdateMedicalCertificateRequest;
 use App\Models\CertificateType;
+use App\Models\ClinicSetting;
 use App\Models\MedicalCertificate;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,9 +31,7 @@ class MedicalCertificateController extends Controller
         if (filled($search)) {
             $query->where(function ($q) use ($search) {
                 $q->whereHas('patient', function ($qp) use ($search) {
-                    $qp->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
+                    $qp->search($search);
                 })
                     ->orWhere('certificate_number', 'like', "%{$search}%");
             });
@@ -56,6 +56,7 @@ class MedicalCertificateController extends Controller
 
         $paginated->getCollection()->transform(function (MedicalCertificate $cert): array {
             $patient = $cert->patient;
+
             return [
                 'id' => $cert->id,
                 'patient_id' => $cert->patient_id,
@@ -77,7 +78,7 @@ class MedicalCertificateController extends Controller
         });
 
         $certificateTypes = CertificateType::query()->orderBy('name')->get();
-        $settings = \App\Models\ClinicSetting::current();
+        $settings = ClinicSetting::current();
         $clinic = [
             'clinic_name' => $settings->clinic_name,
             'doctor_name' => $settings->doctor_name,
@@ -88,7 +89,7 @@ class MedicalCertificateController extends Controller
             'address' => $settings->address,
             'phone' => $settings->phone,
             'email' => $settings->email,
-            'logo_url' => $settings->logo_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($settings->logo_path) : null,
+            'logo_url' => $settings->logo_path ? Storage::disk('public')->url($settings->logo_path) : null,
         ];
 
         return Inertia::render('admin/MedicalCertificates', [
@@ -127,7 +128,7 @@ class MedicalCertificateController extends Controller
     public function print(MedicalCertificate $medicalCertificate): Response
     {
         $medicalCertificate->load(['patient', 'certificateType']);
-        $settings = \App\Models\ClinicSetting::current();
+        $settings = ClinicSetting::current();
 
         return Inertia::render('admin/medical-certificates/Print', [
             'certificate' => [
@@ -151,7 +152,7 @@ class MedicalCertificateController extends Controller
                 'address' => $settings->address,
                 'phone' => $settings->phone,
                 'email' => $settings->email,
-                'logo_url' => $settings->logo_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($settings->logo_path) : null,
+                'logo_url' => $settings->logo_path ? Storage::disk('public')->url($settings->logo_path) : null,
             ],
         ]);
     }
@@ -194,7 +195,7 @@ class MedicalCertificateController extends Controller
      */
     private function formatPatientPhone(?string $phone, ?string $cc): ?string
     {
-        if (!$phone) {
+        if (! $phone) {
             return null;
         }
         $phone = trim($phone);
@@ -202,14 +203,17 @@ class MedicalCertificateController extends Controller
         while (true) {
             if (str_starts_with($phone, '+')) {
                 $phone = substr($phone, 1);
+
                 continue;
             }
             if ($cc !== '' && str_starts_with($phone, $cc)) {
                 $phone = substr($phone, strlen($cc));
+
                 continue;
             }
             break;
         }
+
         return $cc !== '' ? "+{$cc} {$phone}" : "+{$phone}";
     }
 }

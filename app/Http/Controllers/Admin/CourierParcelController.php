@@ -28,9 +28,7 @@ class CourierParcelController extends Controller
         if (filled($search)) {
             $query->where(function ($q) use ($search) {
                 $q->whereHas('patient', function ($qp) use ($search) {
-                    $qp->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
+                    $qp->search($search);
                 });
             });
         }
@@ -50,6 +48,7 @@ class CourierParcelController extends Controller
 
         $paginated->getCollection()->transform(function (CourierParcel $parcel): array {
             $patient = $parcel->patient;
+
             return [
                 'id' => $parcel->id,
                 'patient_id' => $parcel->patient_id,
@@ -75,6 +74,7 @@ class CourierParcelController extends Controller
             ->map(function (MedicineStock $stock): string {
                 $name = $stock->medicine?->name ?? '';
                 $size = $stock->size?->name ?? '';
+
                 return trim(strtoupper($name).' | '.strtoupper($size));
             })
             ->unique()

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use App\Models\Patient;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -15,20 +17,13 @@ class PatientController extends Controller
     /**
      * Search patients by name, email, or phone.
      */
-    public function search(Request $request): \Illuminate\Http\JsonResponse
+    public function search(Request $request): JsonResponse
     {
         $search = $request->query('query');
 
         $patients = Patient::query()
-            ->when(filled($search), function ($query) use ($search) {
-                if (is_numeric($search) && strlen($search) < 7) {
-                    $query->where('id', (int) $search);
-                } else {
-                    $query->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
-                }
-            })
+            ->search($search)
+            ->orderBy('name')
             ->limit(20)
             ->get();
 
@@ -41,7 +36,7 @@ class PatientController extends Controller
                 'address' => $patient->address,
                 'parent_id' => $patient->parent_id,
                 'has_dependents' => $patient->children()->exists(),
-                'label' => $patient->name . " (#" . $patient->id . ")" . ($patient->phone ? " - +{$patient->country_calling_code}{$patient->phone}" : ($patient->email ? " - {$patient->email}" : "")),
+                'label' => $patient->name.' (#'.$patient->id.')'.($patient->phone ? " - +{$patient->country_calling_code}{$patient->phone}" : ($patient->email ? " - {$patient->email}" : '')),
             ])
         );
     }
@@ -49,7 +44,7 @@ class PatientController extends Controller
     /**
      * Get the consolidated clinical and delivery history of a patient.
      */
-    public function history(Patient $patient): \Illuminate\Http\JsonResponse
+    public function history(Patient $patient): JsonResponse
     {
         $appointments = $patient->appointments()
             ->with('vital')
@@ -61,7 +56,7 @@ class PatientController extends Controller
                 'type' => 'appointment',
                 'id' => $apt->id,
                 'date' => $apt->appointment_date?->toDateString(),
-                'title' => 'Appointment: ' . $apt->appointment_number,
+                'title' => 'Appointment: '.$apt->appointment_number,
                 'appointment_type' => $apt->appointment_type,
                 'status' => $apt->status,
                 'amount' => $apt->amount,
@@ -134,15 +129,7 @@ class PatientController extends Controller
         if (filled($id)) {
             $query->where('id', $id);
         } elseif (filled($search)) {
-            $query->where(function ($q) use ($search) {
-                if (is_numeric($search) && strlen($search) < 7) {
-                    $q->where('id', (int) $search);
-                } else {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
-                }
-            });
+            $query->search($search);
         }
 
         $paginated = $query->with(['appointments', 'children', 'parent'])
@@ -314,7 +301,7 @@ class PatientController extends Controller
     /**
      * Join another patient (dependent) to this patient (parent) account.
      */
-    public function join(Request $request, Patient $patient): \Illuminate\Http\RedirectResponse
+    public function join(Request $request, Patient $patient): RedirectResponse
     {
         $validated = $request->validate([
             'dependent_id' => ['required', 'integer', 'exists:patients,id'],
@@ -361,7 +348,7 @@ class PatientController extends Controller
     /**
      * Unlink this patient from their parent account.
      */
-    public function unlink(Patient $patient): \Illuminate\Http\RedirectResponse
+    public function unlink(Patient $patient): RedirectResponse
     {
         $parent = $patient->parent;
 
@@ -376,4 +363,3 @@ class PatientController extends Controller
         ]);
     }
 }
-
