@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { useEchoPublic, echo, echoIsConfigured } from '@laravel/echo-vue';
 import AutoComplete from 'primevue/autocomplete';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
@@ -118,9 +119,9 @@ const form = useForm({
 // Prefill form when selected appointment changes
 watch(
     () => props.selectedAppointment,
-    (appointment) => {
+    (appointment, oldAppointment) => {
         if (appointment) {
-            form.medicines = (appointment.medicines || []).map((med: any) => {
+            const nextMedicines: PrescribedMedicine[] = (appointment.medicines || []).map((med: any) => {
                 if (med && med.id) {
                     const parts = med.id.split('|').map((s: string) => s.trim());
                     const medicineId = parseInt(parts[0], 10);
@@ -155,6 +156,20 @@ watch(
                     quantity: med.quantity || 1,
                 };
             });
+
+            const nextValues = {
+                medicines: nextMedicines,
+                amount: appointment.amount ? Number(appointment.amount) : 0,
+                payment_type: appointment.paymentType || 'Cash',
+            };
+
+            if (appointment.id === oldAppointment?.id && form.isDirty) {
+                form.defaults(nextValues);
+                return;
+            }
+
+            form.defaults(nextValues);
+            form.reset();
             quickFillSelected.value = (appointment.medicines || []).map((med: any) => {
                 if (med) {
                     if (med.label) {
@@ -166,17 +181,30 @@ watch(
                 }
                 return null;
             });
-            form.amount = appointment.amount ? Number(appointment.amount) : 0;
-            form.payment_type = appointment.paymentType || 'Cash';
         } else {
-            form.medicines = [];
+            form.defaults({
+                medicines: [],
+                amount: 0,
+                payment_type: 'Cash',
+            });
+            form.reset();
             quickFillSelected.value = [];
-            form.amount = 0;
-            form.payment_type = 'Cash';
         }
     },
     { immediate: true },
 );
+
+useEchoPublic('live-queue', 'QueueUpdated', () => {
+    router.reload({
+        only: [
+            'appointments',
+            'selectedId',
+            'selectedAppointment',
+            'previousMedicines',
+            'medicinesInventory',
+        ],
+    });
+});
 
 const parsedPreviousMedicines = computed(() => {
     return (props.previousMedicines || []).map((historyItem) => {
@@ -323,8 +351,21 @@ function submitForm(): void {
         return;
     }
 
+    const headers: Record<string, string> = {};
+    if (echoIsConfigured()) {
+        try {
+            const socketId = echo().socketId();
+            if (socketId) {
+                headers['X-Socket-Id'] = socketId;
+            }
+        } catch {
+            // Ignore when Echo is not active
+        }
+    }
+
     form.patch(updateMedicineAction(props.selectedAppointment.id).url, {
         preserveScroll: true,
+        headers,
         onSuccess: () => {
             toast.add({
                 severity: 'success',

@@ -1,8 +1,10 @@
 <?php
 
+use App\Events\QueueUpdated;
 use App\Models\Appointment;
 use App\Models\Patient;
 use App\Models\User;
+use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('authenticated staff can view the patients registry with dependents and appointment history', function () {
@@ -120,3 +122,59 @@ test('authenticated staff can search patients by partial phone number, last name
     'other shared last name with partial phone' => ['Tanwar 6789', 'Rohan Tanwar'],
     'last name only unique' => ['Sharma', 'Meera Sharma'],
 ]);
+
+test('completing an appointment from the booking desk broadcasts QueueUpdated and adds it to medicine tracking', function () {
+    Event::fake([QueueUpdated::class]);
+
+    $user = User::factory()->create();
+    $patient = Patient::factory()->create(['name' => 'Kiran Verma']);
+
+    $appointment = Appointment::factory()->create([
+        'patient_id' => $patient->id,
+        'appointment_date' => today()->toDateString(),
+        'slot' => Appointment::SLOT_MORNING,
+        'appointment_number' => '1',
+        'appointment_order' => 1,
+        'status' => 'pending',
+        'medicine_status' => false,
+    ]);
+
+    $this->actingAs($user)
+        ->patchJson(route('booking.update', $appointment), [
+            'complete' => true,
+            'chief_complaint' => 'Sneezing',
+            'present_complaint' => 'Runny nose for 3 days',
+            'diagnosis' => 'Seasonal allergy',
+            'treatment' => 'Antihistamine course',
+            'medicines' => [
+                ['id' => 'CETIRIZINE | TABLET | 10MG', 'label' => 'CETIRIZINE | TABLET | 10MG'],
+            ],
+            'medication_instructions' => 'Take once daily at night',
+            'amount' => '250',
+        ])
+        ->assertSuccessful();
+
+    Event::assertDispatched(QueueUpdated::class, fn (QueueUpdated $event) => $event->session === 'Morning');
+
+    $this->actingAs($user)
+        ->get(route('admin.medicine-tracking'))
+        ->assertSuccessful()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('admin/MedicineTracking')
+            ->has('appointments', 1)
+            ->where('appointments.0.id', $appointment->id)
+            ->where('selectedAppointment.id', $appointment->id));
+
+    Event::fake([QueueUpdated::class]);
+
+    $this->actingAs($user)
+        ->patch(route('admin.medicine-tracking.update', $appointment), [
+            'medicines' => [],
+            'amount' => 250,
+            'payment_type' => 'Cash',
+        ])
+        ->assertRedirect(route('admin.medicine-tracking'));
+
+    Event::assertDispatched(QueueUpdated::class, fn (QueueUpdated $event) => $event->session === 'Morning');
+    expect($appointment->fresh()->medicine_status)->toBeTrue();
+});

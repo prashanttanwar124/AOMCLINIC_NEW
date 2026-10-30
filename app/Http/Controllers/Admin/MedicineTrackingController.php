@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\QueueUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use App\Models\Category;
@@ -245,6 +246,9 @@ class MedicineTrackingController extends Controller
             'payment_type' => $validated['payment_type'],
             'medicine_status' => true,
         ]);
+
+        $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
+        broadcast(new QueueUpdated($sessionLabel))->toOthers();
 
         $patientName = $appointment->patient?->name ?? 'Walk-in patient';
 
