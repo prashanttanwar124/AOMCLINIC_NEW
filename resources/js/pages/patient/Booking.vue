@@ -2,8 +2,9 @@
 import { Head, router } from '@inertiajs/vue3';
 import { useEchoPublic } from '@laravel/echo-vue';
 import Button from 'primevue/button';
+import InputText from 'primevue/inputtext';
 import Message from 'primevue/message';
-import Textarea from 'primevue/textarea';
+import Select from 'primevue/select';
 import { useToast } from 'primevue/usetoast';
 import { computed, reactive, watch } from 'vue';
 import { store } from '@/actions/App/Http/Controllers/Patient/PatientAppointmentController';
@@ -77,7 +78,7 @@ const form = reactive({
 
 const selectedPatientName = computed(() => {
     const found = props.bookablePatients.find((p) => p.id === form.patient_id);
-    return found ? found.name.replace(/\s*\(Self\)$/i, '') : 'You';
+    return found ? found.name.replace(/\s*\(Self\)$/i, '') : 'Patient';
 });
 
 const selectedDate = computed(() => {
@@ -212,7 +213,7 @@ const submit = async (): Promise<void> => {
 <template>
     <Head title="Book Appointment" />
 
-    <div class="senior-booking-page">
+    <div class="compact-booking-page">
         <Message
             v-if="noticeEnabled"
             severity="info"
@@ -235,101 +236,63 @@ const submit = async (): Promise<void> => {
             clinic directly to schedule an appointment.
         </Message>
 
-        <form @submit.prevent="submit" class="page-card senior-booking-card">
-            <!-- Step 1: Patient (only shown prominently, very easy to tap) -->
-            <div v-if="bookablePatients.length > 1" class="step-block">
-                <h2 class="step-heading">1. Who is visiting the doctor?</h2>
-                <div class="big-choice-grid">
-                    <button
-                        v-for="patient in bookablePatients"
-                        :key="patient.id"
-                        type="button"
-                        class="big-choice-btn"
-                        :class="{
-                            'big-choice-btn--selected':
-                                form.patient_id === patient.id,
-                        }"
+        <form @submit.prevent="submit" class="page-card compact-booking-card">
+            <!-- Row 1: Patient, Visit Type, and Session in one horizontal row -->
+            <div class="top-controls-grid">
+                <div class="control-block">
+                    <label for="patient_id" class="control-label">
+                        1. Patient
+                    </label>
+                    <Select
+                        id="patient_id"
+                        v-model="form.patient_id"
+                        :options="bookablePatients"
+                        option-label="name"
+                        option-value="id"
                         :disabled="!bookingEnabled"
-                        @click="form.patient_id = patient.id"
-                    >
-                        <i
-                            :class="
-                                form.patient_id === patient.id
-                                    ? 'pi pi-check-circle'
-                                    : 'pi pi-circle'
-                            "
-                        />
-                        <span>{{ patient.name }}</span>
-                    </button>
+                        placeholder="Select patient"
+                        fluid
+                    />
+                    <InputError :message="form.errors.patient_id" />
                 </div>
-                <InputError :message="form.errors.patient_id" />
-            </div>
 
-            <!-- Step 2: Visit Day -->
-            <div class="step-block">
-                <h2 class="step-heading">
-                    {{ bookablePatients.length > 1 ? '2.' : '1.' }} Which day do
-                    you want to visit?
-                </h2>
-                <div class="day-grid">
-                    <button
-                        v-for="(option, index) in dateOptions"
-                        :key="option.value"
-                        type="button"
-                        class="day-btn"
-                        :class="{
-                            'day-btn--selected':
-                                option.value === form.appointment_date,
-                            'day-btn--disabled': option.disabled,
-                        }"
-                        :disabled="!bookingEnabled || option.disabled"
-                        @click="chooseDate(option)"
-                    >
-                        <span class="day-btn__when">
-                            {{
-                                index === 0
-                                    ? 'Today'
-                                    : index === 1
-                                      ? 'Tomorrow'
-                                      : option.label.split(',')[0]
-                            }}
-                        </span>
-                        <strong class="day-btn__date">
-                            {{
-                                option.label
-                                    .replace(/^[^,]+,\s*/, '')
-                                    .replace(/\s+\d{4}$/, '')
-                            }}
-                        </strong>
-                        <span v-if="option.disabled" class="day-btn__closed">
-                            Closed
-                        </span>
-                    </button>
+                <div class="control-block">
+                    <label class="control-label">2. Visit Type</label>
+                    <div class="pill-toggle-group">
+                        <button
+                            v-for="typeOption in appointmentTypes"
+                            :key="typeOption.value"
+                            type="button"
+                            class="pill-toggle-btn"
+                            :class="{
+                                'pill-toggle-btn--active':
+                                    form.appointment_type === typeOption.value,
+                            }"
+                            :disabled="!bookingEnabled"
+                            @click="form.appointment_type = typeOption.value"
+                        >
+                            {{ typeOption.label }}
+                        </button>
+                    </div>
+                    <InputError :message="form.errors.appointment_type" />
                 </div>
-                <InputError :message="form.errors.appointment_date" />
-            </div>
 
-            <!-- Step 3: Morning or Evening -->
-            <div class="step-block">
-                <h2 class="step-heading">
-                    {{ bookablePatients.length > 1 ? '3.' : '2.' }} Morning or
-                    Evening?
-                </h2>
-                <div class="session-grid">
-                    <button
-                        v-for="option in sessionOptions"
-                        :key="option.value"
-                        type="button"
-                        class="session-big-btn"
-                        :class="{
-                            'session-big-btn--selected':
-                                option.value === form.appointment_session,
-                            'session-big-btn--disabled': option.disabled,
-                        }"
-                        :disabled="option.disabled"
-                        @click="chooseSession(option)"
-                    >
-                        <div class="session-big-btn__left">
+                <div class="control-block">
+                    <label class="control-label">3. Session</label>
+                    <div class="pill-toggle-group">
+                        <button
+                            v-for="option in sessionOptions"
+                            :key="option.value"
+                            type="button"
+                            class="pill-toggle-btn session-toggle-btn"
+                            :class="{
+                                'pill-toggle-btn--active':
+                                    option.value === form.appointment_session,
+                                'pill-toggle-btn--disabled': option.disabled,
+                            }"
+                            :disabled="option.disabled"
+                            @click="chooseSession(option)"
+                        >
                             <i
                                 :class="
                                     option.value === 'morning'
@@ -337,455 +300,401 @@ const submit = async (): Promise<void> => {
                                         : 'pi pi-moon'
                                 "
                             />
-                            <div>
-                                <strong>{{ option.label }}</strong>
-                                <span>
-                                    {{
-                                        option.disabled
-                                            ? 'Not available'
-                                            : `${option.remaining} seats open`
-                                    }}
-                                </span>
-                            </div>
-                        </div>
-                        <i
-                            v-if="option.value === form.appointment_session"
-                            class="pi pi-check-circle session-check"
-                        />
-                    </button>
+                            <span>{{ option.label }}</span>
+                            <small class="session-badge">
+                                {{
+                                    option.disabled
+                                        ? 'Full'
+                                        : `${option.remaining} left`
+                                }}
+                            </small>
+                        </button>
+                    </div>
+                    <InputError :message="form.errors.appointment_session" />
                 </div>
-                <InputError :message="form.errors.appointment_session" />
             </div>
 
-            <!-- Step 4: Token Number -->
-            <div class="step-block">
-                <h2 class="step-heading">
-                    {{ bookablePatients.length > 1 ? '4.' : '3.' }} Choose Token
-                    Number
-                </h2>
-                <p class="step-subtext">
-                    We have already selected the earliest available token for
-                    you. Tap another group if you prefer a later number.
-                </p>
+            <!-- Row 2: Date & Token side-by-side -->
+            <div class="middle-controls-grid">
+                <div class="control-block">
+                    <label class="control-label">4. Select Date</label>
+                    <div class="compact-date-strip">
+                        <button
+                            v-for="(option, index) in dateOptions"
+                            :key="option.value"
+                            type="button"
+                            class="compact-date-btn"
+                            :class="{
+                                'compact-date-btn--active':
+                                    option.value === form.appointment_date,
+                                'compact-date-btn--disabled': option.disabled,
+                            }"
+                            :disabled="!bookingEnabled || option.disabled"
+                            @click="chooseDate(option)"
+                        >
+                            <span class="compact-date-btn__day">
+                                {{
+                                    index === 0
+                                        ? 'Today'
+                                        : index === 1
+                                          ? 'Tomorrow'
+                                          : option.label.split(',')[0]
+                                }}
+                            </span>
+                            <strong class="compact-date-btn__num">
+                                {{
+                                    option.label
+                                        .replace(/^[^,]+,\s*/, '')
+                                        .replace(/\s+\d{4}$/, '')
+                                }}
+                            </strong>
+                        </button>
+                    </div>
+                    <InputError :message="form.errors.appointment_date" />
+                </div>
 
-                <div v-if="tokenGroupOptions.length > 0" class="token-grid">
-                    <button
-                        v-for="tokenGroup in tokenGroupOptions"
-                        :key="tokenGroup.label"
-                        type="button"
-                        class="token-big-btn"
-                        :class="{
-                            'token-big-btn--selected':
-                                tokenGroup.token === form.appointment_number,
-                        }"
-                        @click="chooseTokenGroup(tokenGroup)"
+                <div class="control-block">
+                    <div class="control-label-row">
+                        <label class="control-label" style="margin: 0">
+                            5. Token Group
+                        </label>
+                        <span
+                            v-if="form.appointment_number"
+                            class="assigned-badge"
+                        >
+                            Gets Token #{{ form.appointment_number }}
+                        </span>
+                    </div>
+
+                    <div
+                        v-if="tokenGroupOptions.length > 0"
+                        class="compact-token-strip"
                     >
-                        <span class="token-big-btn__range"
-                            >Tokens {{ tokenGroup.label }}</span
+                        <button
+                            v-for="tokenGroup in tokenGroupOptions"
+                            :key="tokenGroup.label"
+                            type="button"
+                            class="compact-token-btn"
+                            :class="{
+                                'compact-token-btn--active':
+                                    tokenGroup.token ===
+                                    form.appointment_number,
+                            }"
+                            @click="chooseTokenGroup(tokenGroup)"
                         >
-                        <strong class="token-big-btn__gets"
-                            >Token #{{ tokenGroup.token }}</strong
-                        >
-                    </button>
-                </div>
+                            {{ tokenGroup.label }}
+                        </button>
+                    </div>
+                    <div v-else class="compact-empty">
+                        No open tokens for this session
+                    </div>
 
-                <div v-else class="empty-box">
-                    No tokens available for this session. Please choose another
-                    day or session above.
+                    <InputError :message="form.errors.appointment_number" />
                 </div>
-
-                <InputError :message="form.errors.appointment_number" />
             </div>
 
-            <!-- Step 5: Visit Type & Optional Note -->
-            <div class="step-block">
-                <h2 class="step-heading">
-                    {{ bookablePatients.length > 1 ? '5.' : '4.' }} Visit Type
-                </h2>
-                <div class="big-choice-grid">
-                    <button
-                        v-for="typeOption in appointmentTypes"
-                        :key="typeOption.value"
-                        type="button"
-                        class="big-choice-btn"
-                        :class="{
-                            'big-choice-btn--selected':
-                                form.appointment_type === typeOption.value,
-                        }"
-                        :disabled="!bookingEnabled"
-                        @click="form.appointment_type = typeOption.value"
-                    >
-                        <i
-                            :class="
-                                form.appointment_type === typeOption.value
-                                    ? 'pi pi-check-circle'
-                                    : 'pi pi-circle'
-                            "
-                        />
-                        <span>{{ typeOption.label }}</span>
-                    </button>
-                </div>
-                <InputError :message="form.errors.appointment_type" />
-
-                <div class="note-box">
-                    <label for="reason_for_visit" class="note-label">
-                        Health problem or note for doctor (Optional)
-                    </label>
-                    <Textarea
+            <!-- Row 3: Reason & Confirm Action Bar in one row -->
+            <div class="bottom-action-bar">
+                <div class="reason-inline">
+                    <InputText
                         id="reason_for_visit"
                         v-model="form.reason_for_visit"
-                        rows="2"
-                        placeholder="Optional: Write your health concern here..."
+                        placeholder="Optional note or symptoms for the doctor..."
                         :disabled="!bookingEnabled"
-                        auto-resize
                         fluid
-                        class="senior-textarea"
                     />
                     <InputError :message="form.errors.reason_for_visit" />
                 </div>
-            </div>
 
-            <!-- Final Confirmation Box -->
-            <div class="confirm-box">
-                <div v-if="canSubmit" class="confirm-summary">
-                    <div class="confirm-summary__label">
-                        Your Selected Appointment:
-                    </div>
-                    <div class="confirm-summary__details">
-                        <strong>{{ selectedPatientName }}</strong> ·
-                        <strong>{{ selectedDate?.label }}</strong> ·
+                <div class="confirm-inline">
+                    <div v-if="canSubmit" class="confirm-inline__summary">
+                        <span>{{ selectedPatientName }}</span> ·
+                        <strong>{{ selectedDate?.label.replace(/\s+\d{4}$/, '') }}</strong> ·
                         <strong>{{ selectedSession?.label }}</strong> ·
-                        <span class="confirm-token-highlight">
+                        <span class="token-chip">
                             Token #{{ form.appointment_number }}
                         </span>
                     </div>
-                </div>
-                <div v-else class="confirm-summary">
-                    <div class="confirm-summary__details">
-                        Please select an open day and session above.
-                    </div>
-                </div>
 
-                <Button
-                    type="submit"
-                    label="Confirm & Book Appointment"
-                    icon="pi pi-check-circle"
-                    class="confirm-submit-btn"
-                    :loading="form.processing"
-                    :disabled="!canSubmit"
-                />
+                    <Button
+                        type="submit"
+                        label="Confirm Booking"
+                        icon="pi pi-check-circle"
+                        class="confirm-btn"
+                        :loading="form.processing"
+                        :disabled="!canSubmit"
+                    />
+                </div>
             </div>
         </form>
     </div>
 </template>
 
 <style scoped>
-.senior-booking-page {
+.compact-booking-page {
     display: grid;
-    gap: 1.25rem;
-    max-width: 50rem;
+    gap: 0.85rem;
 }
 
-.senior-booking-card {
+.compact-booking-card {
     display: grid;
-    gap: 1.75rem;
-    padding: 1.75rem;
+    gap: 1.15rem;
+    padding: 1.25rem 1.4rem;
     background: #ffffff;
 }
 
-.step-block {
+.control-block {
     display: grid;
-    gap: 0.75rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 1px solid #e2ecef;
+    gap: 0.45rem;
+    align-content: start;
 }
 
-.step-heading {
-    margin: 0;
-    font-size: 1.2rem;
+.control-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.control-label {
+    font-size: 0.92rem;
     font-weight: 800;
     color: #10242e;
 }
 
-.step-subtext {
-    margin: -0.25rem 0 0;
-    font-size: 0.98rem;
-    color: #475569;
-    line-height: 1.45;
-}
-
-/* Big Choice Buttons (Patient & Visit Type) */
-.big-choice-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: 0.75rem;
-}
-
-.big-choice-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-height: 3.5rem;
-    padding: 0.85rem 1.15rem;
-    border-radius: 0.75rem;
-    border: 2px solid #cbd5e1;
-    background: #ffffff;
-    color: #1e293b;
-    font-size: 1.05rem;
-    font-weight: 700;
-    text-align: left;
-    cursor: pointer;
-}
-
-.big-choice-btn i {
-    font-size: 1.25rem;
-    color: #94a3b8;
-}
-
-.big-choice-btn--selected {
-    border-color: #0c6e72;
+.assigned-badge {
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #0c6e72;
     background: #eefaf9;
-    color: #0c6e72;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 181, 186, 0.3);
 }
 
-.big-choice-btn--selected i {
-    color: #0c6e72;
-}
-
-/* Day Buttons */
-.day-grid {
+/* Row 1: 3 Columns */
+.top-controls-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: minmax(13rem, 1fr) minmax(14rem, 1.1fr) minmax(16rem, 1.3fr);
+    gap: 1rem;
+    align-items: start;
 }
 
-.day-btn {
-    display: flex;
-    flex-direction: column;
+.pill-toggle-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+}
+
+.pill-toggle-btn {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 4.75rem;
-    padding: 0.75rem;
-    border-radius: 0.75rem;
-    border: 2px solid #cbd5e1;
+    gap: 0.4rem;
+    min-height: 2.75rem;
+    padding: 0.45rem 0.7rem;
+    border-radius: 0.6rem;
+    border: 1.5px solid #cbd5e1;
     background: #ffffff;
+    color: #1e293b;
+    font-size: 0.92rem;
+    font-weight: 700;
     cursor: pointer;
+    transition: all 0.15s ease;
 }
 
-.day-btn__when {
-    font-size: 0.88rem;
-    font-weight: 700;
-    color: #475569;
+.pill-toggle-btn:hover:not(:disabled) {
+    border-color: #0fb5ba;
 }
 
-.day-btn__date {
-    font-size: 1.15rem;
-    font-weight: 800;
-    color: #10242e;
-    margin-top: 0.15rem;
-}
-
-.day-btn__closed {
-    font-size: 0.8rem;
-    font-weight: 700;
-    color: #dc2626;
-    margin-top: 0.15rem;
-}
-
-.day-btn--selected {
-    border-color: #0c6e72;
+.pill-toggle-btn--active {
     background: #0c6e72;
+    border-color: #0c6e72;
     color: #ffffff;
 }
 
-.day-btn--selected .day-btn__when,
-.day-btn--selected .day-btn__date {
-    color: #ffffff;
-}
-
-.day-btn--disabled {
+.pill-toggle-btn--disabled {
     opacity: 0.45;
     cursor: not-allowed;
     background: #f8fafc;
 }
 
-/* Session Big Buttons */
-.session-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.85rem;
-}
-
-.session-big-btn {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    min-height: 4.5rem;
-    padding: 1rem 1.25rem;
-    border-radius: 0.75rem;
-    border: 2px solid #cbd5e1;
-    background: #ffffff;
-    text-align: left;
-    cursor: pointer;
-}
-
-.session-big-btn__left {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-}
-
-.session-big-btn__left i {
-    font-size: 1.5rem;
+.session-badge {
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    background: rgba(15, 181, 186, 0.14);
     color: #0c6e72;
 }
 
-.session-big-btn__left strong {
-    display: block;
-    font-size: 1.15rem;
-    color: #10242e;
+.pill-toggle-btn--active .session-badge {
+    background: rgba(255, 255, 255, 0.22);
+    color: #ffffff;
 }
 
-.session-big-btn__left span {
-    display: block;
-    font-size: 0.92rem;
-    color: #475569;
-    margin-top: 0.1rem;
-}
-
-.session-big-btn--selected {
-    border-color: #0c6e72;
-    background: #eefaf9;
-}
-
-.session-check {
-    font-size: 1.4rem;
-    color: #0c6e72;
-}
-
-.session-big-btn--disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    background: #f8fafc;
-}
-
-/* Token Big Buttons */
-.token-grid {
+/* Row 2: Date & Token side-by-side */
+.middle-controls-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 1rem;
+    padding-top: 0.95rem;
+    border-top: 1px solid #e2ecef;
 }
 
-.token-big-btn {
+.compact-date-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(5.8rem, 1fr));
+    gap: 0.5rem;
+}
+
+.compact-date-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 4.25rem;
-    padding: 0.75rem;
-    border-radius: 0.75rem;
-    border: 2px solid #cbd5e1;
+    min-height: 3.35rem;
+    padding: 0.4rem 0.45rem;
+    border-radius: 0.6rem;
+    border: 1.5px solid #cbd5e1;
     background: #ffffff;
     cursor: pointer;
+    transition: all 0.15s ease;
 }
 
-.token-big-btn__range {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #475569;
+.compact-date-btn:hover:not(:disabled) {
+    border-color: #0fb5ba;
 }
 
-.token-big-btn__gets {
-    font-size: 1.12rem;
+.compact-date-btn__day {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #64748b;
+}
+
+.compact-date-btn__num {
+    font-size: 0.95rem;
     font-weight: 800;
     color: #10242e;
-    margin-top: 0.15rem;
 }
 
-.token-big-btn--selected {
-    border-color: #0c6e72;
+.compact-date-btn--active {
+    background: #10242e;
+    border-color: #10242e;
+    color: #ffffff;
+}
+
+.compact-date-btn--active .compact-date-btn__day {
+    color: #5eead4;
+}
+
+.compact-date-btn--active .compact-date-btn__num {
+    color: #ffffff;
+}
+
+.compact-date-btn--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: #f8fafc;
+}
+
+.compact-token-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr));
+    gap: 0.45rem;
+}
+
+.compact-token-btn {
+    min-height: 3.35rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: 0.6rem;
+    border: 1.5px solid #cbd5e1;
+    background: #ffffff;
+    color: #10242e;
+    font-size: 0.95rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.compact-token-btn:hover {
+    border-color: #0fb5ba;
+}
+
+.compact-token-btn--active {
     background: #0c6e72;
+    border-color: #0c6e72;
     color: #ffffff;
 }
 
-.token-big-btn--selected .token-big-btn__range,
-.token-big-btn--selected .token-big-btn__gets {
-    color: #ffffff;
-}
-
-.empty-box {
-    padding: 1rem;
-    border-radius: 0.75rem;
+.compact-empty {
+    display: flex;
+    align-items: center;
+    min-height: 3.35rem;
+    padding: 0.5rem 0.85rem;
+    border-radius: 0.6rem;
     background: #fef2f2;
     color: #991b1b;
-    font-size: 1rem;
+    font-size: 0.88rem;
     font-weight: 600;
 }
 
-/* Note */
-.note-box {
+/* Row 3: Bottom Action Bar */
+.bottom-action-bar {
     display: grid;
-    gap: 0.45rem;
-    margin-top: 0.5rem;
-}
-
-.note-label {
-    font-size: 1rem;
-    font-weight: 700;
-    color: #1e293b;
-}
-
-.senior-textarea {
-    font-size: 1.05rem;
-}
-
-/* Confirm Box */
-.confirm-box {
-    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 1rem;
-    padding: 1.25rem;
-    border-radius: 0.85rem;
+    align-items: center;
+    padding-top: 0.95rem;
+    border-top: 1px solid #e2ecef;
+}
+
+.confirm-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+}
+
+.confirm-inline__summary {
+    font-size: 0.92rem;
+    color: #334155;
     background: #f0fdfa;
-    border: 2px solid #0c6e72;
+    border: 1px solid rgba(15, 181, 186, 0.3);
+    padding: 0.55rem 0.85rem;
+    border-radius: 0.6rem;
+    white-space: nowrap;
 }
 
-.confirm-summary__label {
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: #0c6e72;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-.confirm-summary__details {
-    font-size: 1.15rem;
-    color: #10242e;
-    margin-top: 0.25rem;
-    line-height: 1.5;
-}
-
-.confirm-token-highlight {
+.token-chip {
     display: inline-block;
-    padding: 0.15rem 0.6rem;
-    border-radius: 0.4rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 0.35rem;
     background: #0c6e72;
     color: #ffffff;
     font-weight: 800;
 }
 
-.confirm-submit-btn {
-    min-height: 3.6rem;
-    font-size: 1.15rem;
+.confirm-btn {
+    min-height: 2.85rem;
+    font-size: 1rem;
     font-weight: 800;
+    white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-    .senior-booking-card {
-        padding: 1.15rem;
+@media (max-width: 991px) {
+    .top-controls-grid,
+    .middle-controls-grid,
+    .bottom-action-bar {
+        grid-template-columns: 1fr;
     }
 
-    .session-grid {
-        grid-template-columns: 1fr;
+    .confirm-inline {
+        justify-content: space-between;
+    }
+
+    .confirm-inline__summary {
+        white-space: normal;
     }
 }
 </style>
