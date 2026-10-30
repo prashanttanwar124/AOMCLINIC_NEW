@@ -989,7 +989,7 @@ function unlinkAccount(patient: { id: number; name: string }): void {
 
                 <div v-if="selectedDependentPatient && typeof selectedDependentPatient === 'object' && selectedDependentPatient.id" class="parent-details-card">
                     <div class="parent-details-header">
-                        <i class="pi pi-user-check"></i>
+                        <i class="pi pi-verified"></i>
                         <span>Selected Dependent Account</span>
                     </div>
                     <div class="parent-details-body">

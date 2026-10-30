@@ -1073,18 +1073,24 @@ function getPaymentSeverity(status: string): 'success' | 'danger' {
 
 .search-input-wrapper {
     position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
 }
 
 .search-icon {
     position: absolute;
-    left: 0.75rem;
+    left: 0.85rem;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-color-secondary);
+    z-index: 1;
+    pointer-events: none;
 }
 
-.search-input {
-    padding-left: 2.25rem;
+:deep(.search-input) {
+    padding-left: 2.4rem !important;
+    width: 100%;
 }
 
 .action-btn {

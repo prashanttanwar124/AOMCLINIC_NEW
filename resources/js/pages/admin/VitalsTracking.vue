@@ -204,7 +204,8 @@ function submitForm(): void {
                                 :class="{ 'is-active': sessionFilter === 'All' }"
                                 @click="sessionFilter = 'All'"
                             >
-                                All Sessions
+                                <i class="pi pi-list"></i>
+                                <span>All Sessions</span>
                             </button>
                             <button
                                 type="button"
@@ -212,7 +213,8 @@ function submitForm(): void {
                                 :class="{ 'is-active': sessionFilter === 'Morning' }"
                                 @click="sessionFilter = 'Morning'"
                             >
-                                Morning
+                                <i class="pi pi-sun"></i>
+                                <span>Morning</span>
                             </button>
                             <button
                                 type="button"
@@ -220,7 +222,8 @@ function submitForm(): void {
                                 :class="{ 'is-active': sessionFilter === 'Evening' }"
                                 @click="sessionFilter = 'Evening'"
                             >
-                                Evening
+                                <i class="pi pi-moon"></i>
+                                <span>Evening</span>
                             </button>
                         </div>
                     </div>
@@ -261,9 +264,12 @@ function submitForm(): void {
                             <h4 class="queue-patient-name">{{ apt.patientName }}</h4>
                             <p class="queue-meta-text">
                                 <span v-if="apt.age">{{ apt.age }} yrs</span>
-                                <span v-if="apt.gender"> · {{ apt.gender }}</span>
-                                <span class="badge-status-dot ml-2" :class="`status-${apt.status}`"></span>
-                                <span class="capitalize ml-1 text-xs text-secondary">{{ apt.status }}</span>
+                                <span v-if="apt.age && apt.gender" class="queue-meta-sep">·</span>
+                                <span v-if="apt.gender">{{ apt.gender }}</span>
+                                <span class="queue-status-pill">
+                                    <span class="badge-status-dot" :class="`status-${apt.status}`"></span>
+                                    <span class="capitalize">{{ apt.status }}</span>
+                                </span>
                             </p>
                         </li>
                     </ul>
@@ -280,31 +286,41 @@ function submitForm(): void {
                             <div class="patient-token-badge">
                                 Token {{ formatToken(selectedAppointment.appointmentSequence) }}
                             </div>
-                            <div>
+                            <div class="patient-identity-copy">
                                 <h3 class="patient-name">{{ selectedAppointment.patientName }}</h3>
                                 <p class="patient-sub">
-                                    {{ selectedAppointment.session }} Session · {{ selectedAppointment.status }}
+                                    <span>{{ selectedAppointment.session }} Session</span>
+                                    <span>· {{ selectedAppointment.status }}</span>
                                     <span v-if="selectedAppointment.age">· {{ selectedAppointment.age }}y</span>
                                     <span v-if="selectedAppointment.gender">· {{ selectedAppointment.gender }}</span>
                                 </p>
                             </div>
                         </div>
 
-                        <div class="patient-contact">
-                            <span v-if="selectedAppointment.phone"><i class="pi pi-phone mr-1"></i> {{ selectedAppointment.phone }}</span>
+                        <div v-if="selectedAppointment.phone" class="patient-contact">
+                            <i class="pi pi-phone"></i>
+                            <span>{{ selectedAppointment.phone }}</span>
                         </div>
                     </div>
 
                     <Divider />
 
                     <form @submit.prevent="submitForm" class="vitals-form">
-                        <h4 class="section-title"><i class="vital-icon icon-heart pi pi-heart-fill"></i>Record Patient Vitals</h4>
+                        <h4 class="section-title">
+                            <span class="vital-icon icon-heart">
+                                <i class="pi pi-heart-fill"></i>
+                            </span>
+                            <span>Record Patient Vitals</span>
+                        </h4>
                         
                         <div class="vitals-input-grid">
                             <!-- Temperature -->
                             <div class="vitals-field">
                                 <label for="vital-temp">
-                                    <i class="vital-icon icon-temp pi pi-sun"></i> Temperature
+                                    <span class="vital-icon icon-temp">
+                                        <i class="pi pi-sun"></i>
+                                    </span>
+                                    <span>Temperature</span>
                                 </label>
                                 <div class="p-inputgroup">
                                     <InputText
@@ -321,7 +337,10 @@ function submitForm(): void {
                             <!-- Weight -->
                             <div class="vitals-field">
                                 <label for="vital-weight">
-                                    <i class="vital-icon icon-weight pi pi-gauge"></i> Weight
+                                    <span class="vital-icon icon-weight">
+                                        <i class="pi pi-gauge"></i>
+                                    </span>
+                                    <span>Weight</span>
                                 </label>
                                 <div class="p-inputgroup">
                                     <InputText
@@ -338,7 +357,10 @@ function submitForm(): void {
                             <!-- Blood Pressure -->
                             <div class="vitals-field">
                                 <label for="vital-bp">
-                                    <i class="vital-icon icon-bp pi pi-activity"></i> Blood Pressure
+                                    <span class="vital-icon icon-bp">
+                                        <i class="pi pi-wave-pulse"></i>
+                                    </span>
+                                    <span>Blood Pressure</span>
                                 </label>
                                 <div class="p-inputgroup">
                                     <InputText
@@ -355,7 +377,10 @@ function submitForm(): void {
                             <!-- Pulse Rate -->
                             <div class="vitals-field">
                                 <label for="vital-pulse">
-                                    <i class="vital-icon icon-pulse pi pi-heart-fill"></i> Heart / Pulse Rate
+                                    <span class="vital-icon icon-pulse">
+                                        <i class="pi pi-heart-fill"></i>
+                                    </span>
+                                    <span>Heart / Pulse Rate</span>
                                 </label>
                                 <div class="p-inputgroup">
                                     <InputText
@@ -372,7 +397,10 @@ function submitForm(): void {
                             <!-- SpO2 -->
                             <div class="vitals-field">
                                 <label for="vital-spo2">
-                                    <i class="vital-icon icon-spo2 pi pi-percentage"></i> Oxygen Level (SpO2)
+                                    <span class="vital-icon icon-spo2">
+                                        <i class="pi pi-percentage"></i>
+                                    </span>
+                                    <span>Oxygen Level (SpO2)</span>
                                 </label>
                                 <div class="p-inputgroup">
                                     <InputText
@@ -387,12 +415,15 @@ function submitForm(): void {
                             </div>
                         </div>
 
-                        <Divider class="my-4" />
+                        <Divider class="vitals-divider" />
 
                         <!-- Vitals Notes -->
                         <div class="vitals-field full-width">
                             <label for="vital-notes">
-                                <i class="vital-icon icon-notes pi pi-comment"></i> Vitals / Basic Info Notes
+                                <span class="vital-icon icon-notes">
+                                    <i class="pi pi-comment"></i>
+                                </span>
+                                <span>Vitals / Basic Info Notes</span>
                             </label>
                             <textarea
                                 id="vital-notes"
@@ -456,10 +487,7 @@ function submitForm(): void {
 .empty-details-card,
 .queue-item,
 .patient-token-badge,
-.notes-textarea,
-.p-inputgroup,
-.input-field-rounded,
-.inputgroup-addon {
+.notes-textarea {
     border-radius: 6px !important;
 }
 
@@ -488,7 +516,7 @@ function submitForm(): void {
 .filters-container {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.85rem;
     margin-bottom: 0.25rem;
 }
 
@@ -496,33 +524,47 @@ function submitForm(): void {
     position: relative;
     display: flex;
     align-items: center;
+    width: 100%;
 }
 
 .search-icon {
     position: absolute;
-    left: 0.75rem;
+    left: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
     color: var(--text-color-secondary);
+    z-index: 1;
+    pointer-events: none;
 }
 
-.search-input {
-    padding-left: 2.25rem !important;
+:deep(.search-input) {
+    padding-left: 2.4rem !important;
+    width: 100%;
 }
 
 .session-filters {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
 }
 
 .filter-chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
     border: 1px solid var(--surface-border);
     background: var(--surface-50);
-    padding: 0.4rem 0.8rem;
+    padding: 0.45rem 0.9rem;
     font-size: 0.8rem;
     font-weight: 600;
-    border-radius: 20px;
+    border-radius: 999px;
     cursor: pointer;
     transition: all 0.2s ease;
     color: var(--text-color);
+}
+
+.filter-chip-btn i {
+    font-size: 0.8rem;
 }
 
 .filter-chip-btn:hover {
@@ -569,7 +611,7 @@ function submitForm(): void {
 }
 
 .queue-item {
-    padding: 1rem;
+    padding: 1rem 1.1rem;
     border: 1px solid var(--surface-border);
     background: var(--surface-50);
     cursor: pointer;
@@ -591,7 +633,8 @@ function submitForm(): void {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 0.5rem;
+    gap: 0.5rem;
+    margin-bottom: 0.55rem;
 }
 
 .queue-token {
@@ -609,7 +652,8 @@ function submitForm(): void {
 
 .queue-badges {
     display: flex;
-    gap: 0.25rem;
+    flex-wrap: wrap;
+    gap: 0.35rem;
 }
 
 .status-tag {
@@ -617,8 +661,8 @@ function submitForm(): void {
 }
 
 .queue-patient-name {
-    margin: 0 0 0.25rem;
-    font-size: 1rem;
+    margin: 0 0 0.35rem;
+    font-size: 1.02rem;
     font-weight: 600;
     color: var(--text-color);
 }
@@ -629,12 +673,32 @@ function submitForm(): void {
     color: var(--text-color-secondary);
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.queue-meta-sep {
+    opacity: 0.6;
+}
+
+.queue-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.35rem;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    background: var(--surface-card);
+    border: 1px solid var(--surface-border);
+    font-size: 0.74rem;
+    font-weight: 600;
 }
 
 .badge-status-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
+    flex-shrink: 0;
 }
 
 .status-pending {
@@ -663,94 +727,138 @@ function submitForm(): void {
     gap: 1rem;
 }
 
+.patient-identity-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
 .patient-token-badge {
     background: var(--p-primary-50);
     color: var(--p-primary-700);
     border: 1px solid var(--p-primary-200);
-    padding: 0.5rem 0.75rem;
+    padding: 0.55rem 0.85rem;
     font-weight: 800;
     font-size: 0.9rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    flex-shrink: 0;
 }
 
 .patient-name {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.3rem;
     font-weight: 700;
     color: var(--text-color);
 }
 
 .patient-sub {
-    margin: 0.15rem 0 0;
+    margin: 0;
     font-size: 0.85rem;
     color: var(--text-color-secondary);
     text-transform: capitalize;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
 }
 
 .patient-contact {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.85rem;
+    background: var(--surface-50);
+    border: 1px solid var(--surface-border);
+    border-radius: 6px;
+    font-size: 0.88rem;
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.patient-contact i {
+    color: var(--p-primary-500);
     font-size: 0.9rem;
-    color: var(--text-color-secondary);
-    font-weight: 500;
 }
 
 .section-title {
-    margin: 0 0 1rem;
-    font-size: 1.1rem;
+    margin: 0;
+    font-size: 1.12rem;
     font-weight: 700;
     color: var(--text-color);
     display: flex;
     align-items: center;
+    gap: 0.65rem;
 }
 
 .vitals-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.35rem;
 }
 
 .vitals-input-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
     gap: 1.25rem;
 }
 
 .vitals-field {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.55rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--surface-border);
+    border-radius: 8px;
+    background: var(--surface-50);
 }
 
 .vitals-field label {
-    font-size: 0.85rem;
+    font-size: 0.88rem;
     font-weight: 600;
     color: var(--text-color);
     display: flex;
     align-items: center;
+    gap: 0.55rem;
+    cursor: pointer;
 }
 
 .p-inputgroup {
     display: flex;
+    align-items: stretch;
     width: 100%;
+}
+
+.p-inputgroup :deep(.p-inputtext),
+.p-inputgroup .input-field-rounded {
+    flex: 1 1 auto;
+    width: 100%;
+    border-radius: 6px 0 0 6px !important;
 }
 
 .inputgroup-addon {
     background: var(--surface-100);
     border: 1px solid var(--surface-border);
     border-left: 0;
-    padding: 0.5rem 0.75rem;
+    border-radius: 0 6px 6px 0 !important;
+    padding: 0.5rem 0.85rem;
     color: var(--text-color-secondary);
     font-size: 0.85rem;
-    font-weight: 600;
-    display: flex;
+    font-weight: 700;
+    display: inline-flex;
     align-items: center;
+    justify-content: center;
     white-space: nowrap;
 }
 
 .help-text {
-    font-size: 0.75rem;
+    font-size: 0.76rem;
     color: var(--text-color-secondary);
-    margin-top: 0.1rem;
+    margin-top: 0.05rem;
+}
+
+.vitals-divider {
+    margin: 0.25rem 0 !important;
 }
 
 .full-width {
@@ -758,6 +866,7 @@ function submitForm(): void {
 }
 
 .notes-textarea {
+    width: 100%;
     resize: vertical;
     padding: 0.75rem;
     font-family: inherit;
@@ -768,48 +877,61 @@ function submitForm(): void {
 .form-submit-actions {
     display: flex;
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
 }
 
 .submit-btn {
+    width: auto !important;
     padding: 0.75rem 1.5rem !important;
     font-weight: 600;
 }
 
 .vital-icon {
-    margin-right: 0.5rem;
-    font-size: 1rem;
+    width: 1.85rem;
+    height: 1.85rem;
+    border-radius: 6px;
+    font-size: 0.92rem;
     display: inline-flex;
     align-items: center;
-    vertical-align: middle;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .vital-icon.icon-heart {
-    color: #ef4444; /* Red */
-    font-size: 1.15rem;
+    width: 2.1rem;
+    height: 2.1rem;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.12);
+    font-size: 1.05rem;
 }
 
 .vital-icon.icon-temp {
-    color: #f97316; /* Orange */
+    color: #f97316;
+    background: rgba(249, 115, 22, 0.12);
 }
 
 .vital-icon.icon-weight {
-    color: #3b82f6; /* Blue */
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.12);
 }
 
 .vital-icon.icon-bp {
-    color: #a855f7; /* Purple */
+    color: #a855f7;
+    background: rgba(168, 85, 247, 0.12);
 }
 
 .vital-icon.icon-pulse {
-    color: #ef4444; /* Red */
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.12);
 }
 
 .vital-icon.icon-spo2 {
-    color: #14b8a6; /* Teal */
+    color: #14b8a6;
+    background: rgba(20, 184, 166, 0.12);
 }
 
 .vital-icon.icon-notes {
-    color: #6b7280; /* Gray */
+    color: #64748b;
+    background: rgba(100, 116, 139, 0.12);
 }
 </style>

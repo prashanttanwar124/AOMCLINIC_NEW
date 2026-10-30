@@ -588,7 +588,7 @@ function formatCurrency(amount: string | number): string {
                     <div v-if="selectedPatient && typeof selectedPatient === 'object' && selectedPatient.id" class="patient-detail-box">
                         <div class="p-detail-header mb-1">
                             <div class="p-detail-title flex items-center gap-sm font-bold">
-                                <i class="pi pi-user-check"></i>
+                                <i class="pi pi-verified"></i>
                                 <span>Selected Patient Details</span>
                             </div>
                             <Button
@@ -847,16 +847,22 @@ function formatCurrency(amount: string | number): string {
     position: relative;
     display: flex;
     align-items: center;
+    width: 100%;
 }
 
 .search-icon {
     position: absolute;
-    left: 0.75rem;
+    left: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
     color: var(--text-color-secondary);
+    z-index: 1;
+    pointer-events: none;
 }
 
-.search-input {
-    padding-left: 2.25rem !important;
+:deep(.search-input) {
+    padding-left: 2.4rem !important;
+    width: 100%;
 }
 
 .filter-buttons {

@@ -251,7 +251,7 @@ const submit = (): void => {
                             <!-- Patient Info Panel -->
                             <div v-if="selectedPatient && typeof selectedPatient === 'object' && selectedPatient.id" class="patient-details-card">
                                 <div class="patient-details-header">
-                                    <i class="pi pi-user-check"></i>
+                                    <i class="pi pi-verified"></i>
                                     <span>Selected Patient Details</span>
                                 </div>
                                 <div class="patient-details-body">
