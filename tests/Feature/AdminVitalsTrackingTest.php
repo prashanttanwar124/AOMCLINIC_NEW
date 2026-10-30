@@ -51,14 +51,15 @@ test('authenticated staff can view today vitals tracking workspace', function ()
     $response = $this->actingAs($user)->get(route('admin.vitals-tracking'));
 
     $response->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('admin/VitalsTracking')
-            ->has('appointments', 2)
-            ->where('appointments.0.patientName', 'John Doe')
-            ->where('appointments.0.hasVitals', false)
-            ->where('appointments.1.patientName', 'Jane Smith')
-            ->where('appointments.1.hasVitals', true)
-            ->where('selectedId', $apt1->id)
+        ->assertInertia(
+            fn (Assert $page) => $page
+                ->component('admin/VitalsTracking')
+                ->has('appointments', 2)
+                ->where('appointments.0.patientName', 'John Doe')
+                ->where('appointments.0.hasVitals', false)
+                ->where('appointments.1.patientName', 'Jane Smith')
+                ->where('appointments.1.hasVitals', true)
+                ->where('selectedId', $apt1->id)
         );
 });
 
@@ -123,13 +124,14 @@ test('vitals are loaded correctly on the doctor booking desk', function () {
     $response = $this->actingAs($user)->get(route('booking'));
 
     $response->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('admin/Booking')
-            ->has('appointments', 1)
-            ->where('appointments.0.details.vitals.temperature', '99.1')
-            ->where('appointments.0.details.vitals.notes', 'Slight fever')
-            ->where('appointments.0.editable.temperature', '99.1')
-            ->where('appointments.0.editable.notes', 'Slight fever')
+        ->assertInertia(
+            fn (Assert $page) => $page
+                ->component('admin/Booking')
+                ->has('appointments', 1)
+                ->where('appointments.0.details.vitals.temperature', '99.1')
+                ->where('appointments.0.details.vitals.notes', 'Slight fever')
+                ->where('appointments.0.editable.temperature', '99.1')
+                ->where('appointments.0.editable.notes', 'Slight fever')
         );
 });
 

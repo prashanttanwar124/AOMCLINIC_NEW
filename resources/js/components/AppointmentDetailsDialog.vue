@@ -400,7 +400,7 @@ const EDITABLE_KEYS = Object.keys(emptyEditable()) as EditableKey[];
 
 const form = reactive<
     EditableAppointment & {
-        errors: Partial<Record<EditableKey, string>>;
+        errors: Record<string, string>;
         processing: boolean;
     }
 >({
@@ -433,9 +433,59 @@ function formData(): EditableAppointment {
 
 const activeFormSectionIndex = ref(0);
 
+function fieldError(key: EditableKey): string | undefined {
+    if (form.errors[key]) {
+        return form.errors[key];
+    }
+
+    if (key === 'medicines') {
+        const nestedKey = Object.keys(form.errors).find((errorKey) =>
+            errorKey.startsWith('medicines.'),
+        );
+        if (nestedKey) {
+            return form.errors[nestedKey];
+        }
+    }
+
+    return undefined;
+}
+
+function clearFieldError(key: EditableKey): void {
+    if (form.errors[key]) {
+        delete form.errors[key];
+    }
+
+    if (key === 'medicines') {
+        for (const errorKey of Object.keys(form.errors)) {
+            if (errorKey.startsWith('medicines.')) {
+                delete form.errors[errorKey];
+            }
+        }
+    }
+}
+
+function sectionErrorCount(section: FormSection): number {
+    return section.fields.filter((field) => Boolean(fieldError(field.key))).length;
+}
+
+function sectionHasError(section: FormSection): boolean {
+    return sectionErrorCount(section) > 0;
+}
+
+const totalErrorCount = computed(() =>
+    FORM_SECTIONS.reduce((sum, section) => sum + sectionErrorCount(section), 0),
+);
+
+const errorSectionCount = computed(() =>
+    FORM_SECTIONS.filter((section) => sectionHasError(section)).length,
+);
+
 function sectionHasData(section: FormSection): boolean {
     return section.fields.some((field) => {
         const val = form[field.key];
+        if (Array.isArray(val)) {
+            return val.length > 0;
+        }
         return val !== null && val !== undefined && val !== '' && val !== 0;
     });
 }
@@ -507,6 +557,7 @@ const followUpModel = computed<Date | null>({
     get: () => (form.follow_up_day ? parseDate(form.follow_up_day) : null),
     set: (value) => {
         form.follow_up_day = value ? toDateString(value) : null;
+        clearFieldError('follow_up_day');
     },
 });
 
@@ -524,6 +575,7 @@ const medicinesChips = computed<any[]>({
             }
             return m;
         });
+        clearFieldError('medicines');
     },
 });
 
@@ -611,6 +663,23 @@ async function submitForm(complete: boolean): Promise<void> {
         emit('saved', appointment.id);
     } catch (error) {
         form.errors = extractErrors(error);
+
+        const currentSection = FORM_SECTIONS[activeFormSectionIndex.value];
+        if (!currentSection || !sectionHasError(currentSection)) {
+            const firstErrorSectionIndex = FORM_SECTIONS.findIndex((section) =>
+                sectionHasError(section),
+            );
+            if (firstErrorSectionIndex !== -1) {
+                activeFormSectionIndex.value = firstErrorSectionIndex;
+            }
+        }
+
+        if (totalErrorCount.value > 0) {
+            pushToast(toast, {
+                type: 'error',
+                message: `Please review ${totalErrorCount.value} required ${totalErrorCount.value === 1 ? 'field' : 'fields'} across ${errorSectionCount.value} highlighted ${errorSectionCount.value === 1 ? 'tab' : 'tabs'}.`,
+            });
+        }
     } finally {
         form.processing = false;
     }
@@ -755,12 +824,25 @@ function queueStatusSeverity(
                         :key="section.title"
                         type="button"
                         class="booking-modal-tab"
-                        :class="{ 'is-active': activeFormSectionIndex === index }"
+                        :class="{
+                            'is-active': activeFormSectionIndex === index,
+                            'has-error': sectionHasError(section),
+                        }"
                         @click="activeFormSectionIndex = index"
                     >
-                        <i :class="section.icon"></i>
-                        <span>{{ section.title }}</span>
-                        <span v-if="sectionHasData(section)" class="booking-modal-tab__indicator"></span>
+                        <i :class="sectionHasError(section) ? 'pi pi-exclamation-circle' : section.icon"></i>
+                        <span class="booking-modal-tab__label">{{ section.title }}</span>
+                        <span
+                            v-if="sectionHasError(section)"
+                            class="booking-modal-tab__error-badge"
+                            :title="`${sectionErrorCount(section)} validation ${sectionErrorCount(section) === 1 ? 'error' : 'errors'}`"
+                        >
+                            {{ sectionErrorCount(section) }}
+                        </span>
+                        <span
+                            v-else-if="sectionHasData(section)"
+                            class="booking-modal-tab__indicator"
+                        ></span>
                     </button>
                 </aside>
 
@@ -774,6 +856,15 @@ function queueStatusSeverity(
                         >
                             <header class="booking-form-card__header">
                                 <h4>{{ section.title }}</h4>
+                                <span
+                                    v-if="sectionHasError(section)"
+                                    class="booking-form-card__error-pill"
+                                >
+                                    <i class="pi pi-exclamation-triangle"></i>
+                                    {{ sectionErrorCount(section) }}
+                                    {{ sectionErrorCount(section) === 1 ? 'field needs' : 'fields need' }}
+                                    attention
+                                </span>
                             </header>
 
                             <div class="booking-form-grid">
@@ -784,6 +875,7 @@ function queueStatusSeverity(
                                     :class="{
                                         'booking-field--wide':
                                             field.wide || field.type === 'textarea',
+                                        'booking-field--error': Boolean(fieldError(field.key)),
                                     }"
                                 >
                                     <label :for="`field-${field.key}`">
@@ -796,7 +888,9 @@ function queueStatusSeverity(
                                         v-model="form[field.key] as string"
                                         rows="4"
                                         auto-resize
+                                        :invalid="Boolean(fieldError(field.key))"
                                         :placeholder="field.label"
+                                        @update:model-value="clearFieldError(field.key)"
                                     />
                                     <AutoComplete
                                         v-else-if="field.type === 'chips'"
@@ -808,6 +902,7 @@ function queueStatusSeverity(
                                         forceSelection
                                         option-label="label"
                                         dataKey="id"
+                                        :invalid="Boolean(fieldError(field.key))"
                                         placeholder="Search and select medicines..."
                                         class="w-full"
                                         @complete="searchMedicines"
@@ -819,6 +914,7 @@ function queueStatusSeverity(
                                         date-format="dd M yy"
                                         show-icon
                                         icon-display="input"
+                                        :invalid="Boolean(fieldError(field.key))"
                                     />
                                     <InputNumber
                                         v-else-if="field.type === 'number'"
@@ -827,19 +923,24 @@ function queueStatusSeverity(
                                         :min="0"
                                         :max="3650"
                                         show-buttons
+                                        :invalid="Boolean(fieldError(field.key))"
+                                        @update:model-value="clearFieldError(field.key)"
                                     />
                                     <InputText
                                         v-else
                                         :id="`field-${field.key}`"
                                         v-model="form[field.key] as string"
+                                        :invalid="Boolean(fieldError(field.key))"
                                         :placeholder="field.label"
+                                        @update:model-value="clearFieldError(field.key)"
                                     />
 
                                     <small
-                                        v-if="form.errors[field.key]"
+                                        v-if="fieldError(field.key)"
                                         class="booking-field__error"
                                     >
-                                        {{ form.errors[field.key] }}
+                                        <i class="pi pi-exclamation-circle"></i>
+                                        {{ fieldError(field.key) }}
                                     </small>
                                 </div>
                             </div>
@@ -859,9 +960,21 @@ function queueStatusSeverity(
 
         <template v-if="props.appointment" #footer>
             <div class="booking-form-footer">
-                <span v-if="isDirty" class="booking-form-footer__hint">
-                    You have unsaved changes
-                </span>
+                <div class="booking-form-footer__status">
+                    <span
+                        v-if="totalErrorCount > 0"
+                        class="booking-form-footer__error"
+                    >
+                        <i class="pi pi-exclamation-circle"></i>
+                        {{ totalErrorCount }}
+                        {{ totalErrorCount === 1 ? 'error' : 'errors' }} in
+                        {{ errorSectionCount }}
+                        {{ errorSectionCount === 1 ? 'tab' : 'tabs' }} — check red tabs
+                    </span>
+                    <span v-else-if="isDirty" class="booking-form-footer__hint">
+                        You have unsaved changes
+                    </span>
+                </div>
 
                 <div class="booking-form-footer__actions">
                     <Button
@@ -1150,15 +1263,82 @@ function queueStatusSeverity(
     color: var(--p-primary-600);
 }
 
+.booking-modal-tab__label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.booking-modal-tab.has-error {
+    background: color-mix(
+        in srgb,
+        var(--p-red-500) 8%,
+        var(--surface-card)
+    );
+    border-color: color-mix(
+        in srgb,
+        var(--p-red-500) 28%,
+        var(--surface-border)
+    );
+    color: var(--p-red-600);
+}
+
+.booking-modal-tab.has-error:hover {
+    background: color-mix(
+        in srgb,
+        var(--p-red-500) 14%,
+        var(--surface-card)
+    );
+    color: var(--p-red-700);
+}
+
+.booking-modal-tab.has-error i {
+    color: var(--p-red-500);
+}
+
+.booking-modal-tab.has-error.is-active {
+    background: color-mix(
+        in srgb,
+        var(--p-red-500) 15%,
+        var(--surface-card)
+    );
+    border-color: color-mix(
+        in srgb,
+        var(--p-red-500) 45%,
+        var(--surface-border)
+    );
+    border-left: 4px solid var(--p-red-500);
+    color: var(--p-red-700);
+}
+
+.booking-modal-tab.has-error.is-active i {
+    color: var(--p-red-600);
+}
+
+.booking-modal-tab__error-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.3rem;
+    height: 1.3rem;
+    padding: 0 0.38rem;
+    border-radius: 999px;
+    background: var(--p-red-500);
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(239, 68, 68, 0.35);
+}
+
 .booking-modal-tab__indicator {
-    position: absolute;
-    right: 0.75rem;
-    top: 50%;
-    transform: translateY(-50%);
     width: 6px;
     height: 6px;
     border-radius: 50%;
     background: var(--p-green-500);
+    flex-shrink: 0;
 }
 
 .booking-modal-form-pane {
@@ -1175,6 +1355,11 @@ function queueStatusSeverity(
 }
 
 .booking-modal-form-pane .booking-form-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
     border-bottom: 1px solid var(--surface-border);
     padding-bottom: 0.75rem;
     margin-bottom: 1.25rem;
@@ -1184,6 +1369,23 @@ function queueStatusSeverity(
     margin: 0;
     font-size: 1.25rem;
     font-weight: 700;
+}
+
+.booking-form-card__error-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--p-red-500) 12%, var(--surface-card));
+    border: 1px solid color-mix(in srgb, var(--p-red-500) 30%, transparent);
+    color: var(--p-red-600);
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.booking-form-card__error-pill i {
+    font-size: 0.8rem;
 }
 
 /* Form inputs inside the dialog */
@@ -1201,6 +1403,10 @@ function queueStatusSeverity(
     color: var(--text-color);
     font-size: 0.85rem;
     font-weight: 600;
+}
+
+.booking-field--error label {
+    color: var(--p-red-600);
 }
 
 .booking-form-grid {
@@ -1221,8 +1427,16 @@ function queueStatusSeverity(
 }
 
 .booking-field__error {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     color: var(--p-red-500);
     font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.booking-field__error i {
+    font-size: 0.82rem;
 }
 
 .booking-form-footer {
@@ -1232,6 +1446,21 @@ function queueStatusSeverity(
     gap: 1rem;
     width: 100%;
     flex-wrap: wrap;
+}
+
+.booking-form-footer__status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.booking-form-footer__error {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--p-red-600);
+    font-size: 0.85rem;
+    font-weight: 700;
 }
 
 .booking-form-footer__hint {
@@ -1301,6 +1530,15 @@ function queueStatusSeverity(
     .booking-modal-tab.is-active {
         border-right: none;
         border-bottom: 3px solid var(--p-primary-500);
+    }
+
+    .booking-modal-tab.has-error.is-active {
+        border-left-color: color-mix(
+            in srgb,
+            var(--p-red-500) 45%,
+            var(--surface-border)
+        );
+        border-bottom: 3px solid var(--p-red-500);
     }
 }
 
