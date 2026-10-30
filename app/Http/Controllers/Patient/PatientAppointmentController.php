@@ -34,7 +34,7 @@ class PatientAppointmentController extends Controller
             ->get()
             ->map(fn (Patient $p): array => [
                 'id' => $p->id,
-                'name' => $p->name . ($p->id === $patient->id ? ' (Self)' : ($p->id === $ownerId ? ' (Account Holder)' : '')),
+                'name' => $p->name.($p->id === $patient->id ? ' (Self)' : ($p->id === $ownerId ? ' (Account Holder)' : '')),
             ]);
 
         return Inertia::render('patient/Booking', [
@@ -104,7 +104,7 @@ class PatientAppointmentController extends Controller
 
         $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
 
-        broadcast(new QueueUpdated($sessionLabel));
+        broadcast(new QueueUpdated($sessionLabel))->toOthers();
 
         $toast = [
             'type' => 'success',

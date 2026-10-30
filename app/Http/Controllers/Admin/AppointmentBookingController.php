@@ -80,7 +80,7 @@ class AppointmentBookingController extends Controller
 
         $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
 
-        broadcast(new QueueUpdated($sessionLabel));
+        broadcast(new QueueUpdated($sessionLabel))->toOthers();
 
         $toast = [
             'type' => 'success',
@@ -133,7 +133,7 @@ class AppointmentBookingController extends Controller
                             ->all();
 
                         $maxBooked = count($bookedTokens) > 0 ? max($bookedTokens) : 0;
-                        
+
                         $availableTokens = collect(range(1, max($capacity, $maxBooked)))
                             ->reject(fn (int $token): bool => in_array($token, $bookedTokens, true))
                             ->values()

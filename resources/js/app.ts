@@ -10,7 +10,7 @@ import AuthLayout from '@/layouts/AuthLayout.vue';
 import PatientAuthLayout from '@/layouts/patient/AuthLayout.vue';
 import PatientPortalLayout from '@/layouts/patient/PortalLayout.vue';
 import LiveLayout from '@/layouts/patient/LiveLayout.vue';
-import { configureEcho, echo } from '@laravel/echo-vue';
+import { configureEcho } from '@laravel/echo-vue';
 
 configureEcho({
     broadcaster: 'reverb',
@@ -21,14 +21,6 @@ configureEcho({
     forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
     enabledTransports: ['ws', 'wss'],
 });
-
-if (typeof window !== 'undefined') {
-    try {
-        (window as unknown as { Echo: unknown }).Echo = echo();
-    } catch (error) {
-        console.error('Failed to initialize window.Echo:', error);
-    }
-}
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 

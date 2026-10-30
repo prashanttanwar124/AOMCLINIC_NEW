@@ -1,3 +1,4 @@
+import { echo, echoIsConfigured } from '@laravel/echo-vue';
 import axios from 'axios';
 import type { AxiosError } from 'axios';
 import type { ToastServiceMethods } from 'primevue/toastservice';
@@ -20,6 +21,21 @@ const http = axios.create({
         Accept: 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
     },
+});
+
+http.interceptors.request.use((config) => {
+    if (echoIsConfigured()) {
+        try {
+            const socketId = echo().socketId();
+            if (socketId) {
+                config.headers['X-Socket-Id'] = socketId;
+            }
+        } catch {
+            // Ignore when Echo is not active
+        }
+    }
+
+    return config;
 });
 
 export type ValidationErrors = Record<string, string>;

@@ -73,7 +73,7 @@ class BookingSettingController extends Controller
         $settings->save();
 
         try {
-            broadcast(new QueueUpdated('All'));
+            broadcast(new QueueUpdated('All'))->toOthers();
         } catch (\Throwable $e) {
             report($e);
         }

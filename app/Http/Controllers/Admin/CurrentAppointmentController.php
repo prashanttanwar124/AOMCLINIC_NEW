@@ -95,7 +95,7 @@ class CurrentAppointmentController extends Controller
         ];
 
         $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
-        broadcast(new QueueUpdated($sessionLabel));
+        broadcast(new QueueUpdated($sessionLabel))->toOthers();
 
         if ($request->expectsJson()) {
             return response()->json(['toast' => $toast]);
@@ -142,7 +142,7 @@ class CurrentAppointmentController extends Controller
         }
 
         $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
-        broadcast(new QueueUpdated($sessionLabel));
+        broadcast(new QueueUpdated($sessionLabel))->toOthers();
 
         $toast = [
             'type' => 'success',
