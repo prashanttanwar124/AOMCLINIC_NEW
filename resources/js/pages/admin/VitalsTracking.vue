@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { useEchoPublic, echo, echoIsConfigured } from '@laravel/echo-vue';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Divider from 'primevue/divider';
@@ -84,20 +85,44 @@ const form = useForm({
 // Prefill form when selected appointment changes
 watch(
     () => props.selectedAppointment,
-    (appointment) => {
+    (appointment, oldAppointment) => {
         if (appointment && appointment.vitals) {
-            form.temperature = appointment.vitals.temperature || '';
-            form.weight = appointment.vitals.weight || '';
-            form.blood_pressure = appointment.vitals.blood_pressure || '';
-            form.pulse_rate = appointment.vitals.pulse_rate || '';
-            form.spo2 = appointment.vitals.spo2 || '';
-            form.notes = appointment.vitals.notes || '';
+            const nextValues = {
+                temperature: appointment.vitals.temperature || '',
+                weight: appointment.vitals.weight || '',
+                blood_pressure: appointment.vitals.blood_pressure || '',
+                pulse_rate: appointment.vitals.pulse_rate || '',
+                spo2: appointment.vitals.spo2 || '',
+                notes: appointment.vitals.notes || '',
+            };
+
+            if (appointment.id === oldAppointment?.id && form.isDirty) {
+                form.defaults(nextValues);
+                return;
+            }
+
+            form.defaults(nextValues);
+            form.reset();
         } else {
+            form.defaults({
+                temperature: '',
+                weight: '',
+                blood_pressure: '',
+                pulse_rate: '',
+                spo2: '',
+                notes: '',
+            });
             form.reset();
         }
     },
     { immediate: true },
 );
+
+useEchoPublic('live-queue', 'QueueUpdated', () => {
+    router.reload({
+        only: ['appointments', 'selectedId', 'selectedAppointment'],
+    });
+});
 
 function formatToken(sequence: number): string {
     return sequence.toString().padStart(2, '0');
@@ -120,7 +145,20 @@ function submitForm(): void {
         return;
     }
 
+    const headers: Record<string, string> = {};
+    if (echoIsConfigured()) {
+        try {
+            const socketId = echo().socketId();
+            if (socketId) {
+                headers['X-Socket-Id'] = socketId;
+            }
+        } catch {
+            // Ignore when Echo is not active
+        }
+    }
+
     form.patch(updateVitalsAction(props.selectedAppointment.id).url, {
+        headers,
         preserveScroll: true,
         onSuccess: () => {
             toast.add({

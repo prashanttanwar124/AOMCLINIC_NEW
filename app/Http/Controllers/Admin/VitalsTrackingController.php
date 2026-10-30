@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\QueueUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use Illuminate\Http\RedirectResponse;
@@ -119,6 +120,9 @@ class VitalsTrackingController extends Controller
         ]);
 
         $appointment->vital()->updateOrCreate([], $validated);
+
+        $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
+        broadcast(new QueueUpdated($sessionLabel))->toOthers();
 
         $patientName = $appointment->patient?->name ?? 'Walk-in patient';
 

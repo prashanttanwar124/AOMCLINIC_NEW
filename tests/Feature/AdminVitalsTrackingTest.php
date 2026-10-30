@@ -1,9 +1,11 @@
 <?php
 
+use App\Events\QueueUpdated;
 use App\Models\Appointment;
 use App\Models\AppointmentVital;
 use App\Models\Patient;
 use App\Models\User;
+use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guest users are redirected to login from vitals tracking', function () {
@@ -61,11 +63,16 @@ test('authenticated staff can view today vitals tracking workspace', function ()
 });
 
 test('authenticated staff can record and update patient vitals', function () {
+    Event::fake([
+        QueueUpdated::class,
+    ]);
+
     $user = User::factory()->create();
     $patient = Patient::factory()->create();
     $apt = Appointment::factory()->create([
         'patient_id' => $patient->id,
         'appointment_date' => today()->toDateString(),
+        'slot' => Appointment::SLOT_MORNING,
         'status' => 'pending',
     ]);
 
@@ -90,12 +97,16 @@ test('authenticated staff can record and update patient vitals', function () {
         ->and($vital->pulse_rate)->toBe('72')
         ->and($vital->spo2)->toBe('98')
         ->and($vital->notes)->toBe('Patient looks healthy.');
+
+    Event::assertDispatched(QueueUpdated::class, function ($event) {
+        return $event->session === 'Morning';
+    });
 });
 
 test('vitals are loaded correctly on the doctor booking desk', function () {
     $user = User::factory()->create();
     $patient = Patient::factory()->create();
-    
+
     $apt = Appointment::factory()->withVitals([
         'temperature' => '99.1',
         'weight' => '80',
@@ -125,7 +136,7 @@ test('vitals are loaded correctly on the doctor booking desk', function () {
 test('doctors can update patient vitals from the booking desk', function () {
     $user = User::factory()->create();
     $patient = Patient::factory()->create();
-    
+
     $apt = Appointment::factory()->create([
         'patient_id' => $patient->id,
         'appointment_date' => today()->toDateString(),
@@ -157,7 +168,7 @@ test('doctors can update patient vitals from the booking desk', function () {
         ->and($freshApt->present_complaint)->toBe('Fever')
         ->and($freshApt->medication_instructions)->toBe('Take paracetamol')
         ->and($freshApt->amount)->toBe('200.00');
-    
+
     $vital = AppointmentVital::where('appointment_id', $apt->id)->first();
     expect($vital)->not->toBeNull()
         ->and($vital->temperature)->toBe('100.2')

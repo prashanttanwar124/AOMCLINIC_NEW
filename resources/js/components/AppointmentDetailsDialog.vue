@@ -486,6 +486,14 @@ watch(
             return;
         }
         if (historyApt.id === oldHistoryApt?.id && isDirty.value) {
+            for (const key of EDITABLE_KEYS) {
+                if (form[key] === formDefaults[key]) {
+                    (form as Record<EditableKey, unknown>)[key] =
+                        historyApt.editable[key];
+                }
+                (formDefaults as Record<EditableKey, unknown>)[key] =
+                    historyApt.editable[key];
+            }
             return;
         }
         formDefaults = { ...historyApt.editable };
