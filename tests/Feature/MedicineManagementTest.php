@@ -238,3 +238,63 @@ test('authenticated staff can update size option', function () {
         'name' => '50ml',
     ]);
 });
+
+test('authenticated staff can filter medicines by stock status, category, and size', function () {
+    $user = User::factory()->create();
+    $cat30 = Category::factory()->create(['name' => '30C']);
+    $cat200 = Category::factory()->create(['name' => '200C']);
+    $size30 = Size::factory()->create(['name' => '30ml']);
+    $size100 = Size::factory()->create(['name' => '100ml']);
+
+    $healthyMed = Medicine::factory()->create(['name' => 'Aconite']);
+    MedicineStock::factory()->create([
+        'medicine_id' => $healthyMed->id,
+        'category_id' => $cat30->id,
+        'size_id' => $size30->id,
+        'quantity' => 25,
+    ]);
+
+    $lowMed = Medicine::factory()->create(['name' => 'Bryonia']);
+    MedicineStock::factory()->create([
+        'medicine_id' => $lowMed->id,
+        'category_id' => $cat200->id,
+        'size_id' => $size100->id,
+        'quantity' => 5,
+    ]);
+
+    $outMed = Medicine::factory()->create(['name' => 'Chamomilla']);
+    MedicineStock::factory()->create([
+        'medicine_id' => $outMed->id,
+        'category_id' => $cat200->id,
+        'size_id' => $size30->id,
+        'quantity' => 0,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.medicines', ['stock_status' => 'low_stock']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('medicines.data', 1)
+            ->where('medicines.data.0.name', 'Bryonia')
+            ->where('summary.totalMedicines', 3)
+            ->where('summary.inStockCount', 1)
+            ->where('summary.lowStockCount', 1)
+            ->where('summary.outOfStockCount', 1)
+        );
+
+    $this->actingAs($user)
+        ->get(route('admin.medicines', ['stock_status' => 'out_of_stock']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('medicines.data', 1)
+            ->where('medicines.data.0.name', 'Chamomilla')
+        );
+
+    $this->actingAs($user)
+        ->get(route('admin.medicines', ['category_id' => $cat30->id, 'size_id' => $size30->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('medicines.data', 1)
+            ->where('medicines.data.0.name', 'Aconite')
+        );
+});

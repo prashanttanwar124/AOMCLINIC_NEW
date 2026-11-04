@@ -19,8 +19,16 @@ class PatientDashboardController extends Controller
     {
         $patient = $request->user('patient');
 
+        $ownerId = $patient->parent_id ?? $patient->id;
+        $familyIds = $patient->newQuery()
+            ->where('id', $ownerId)
+            ->orWhere('parent_id', $ownerId)
+            ->pluck('id')
+            ->all();
+
         $upcomingAppointments = Appointment::query()
-            ->whereBelongsTo($patient)
+            ->with('patient')
+            ->whereIn('patient_id', $familyIds)
             ->whereNotIn('status', ['complete', 'Complete'])
             ->orderBy('appointment_date')
             ->orderBy('appointment_order')
@@ -29,6 +37,7 @@ class PatientDashboardController extends Controller
             ->map(fn (Appointment $appointment): array => [
                 'date' => $appointment->appointment_date?->format('D, d M Y'),
                 'number' => $appointment->appointment_number,
+                'patientName' => $appointment->patient?->name ?? $patient->name,
                 'reason' => $appointment->purpose_of_appointment,
                 'session' => Appointment::sessionLabelForSlot($appointment->slot),
                 'status' => $appointment->status,
@@ -36,7 +45,8 @@ class PatientDashboardController extends Controller
             ]);
 
         $pastAppointments = Appointment::query()
-            ->whereBelongsTo($patient)
+            ->with('patient')
+            ->whereIn('patient_id', $familyIds)
             ->whereIn('status', ['complete', 'Complete'])
             ->orderByDesc('appointment_date')
             ->orderByDesc('appointment_order')
@@ -44,6 +54,7 @@ class PatientDashboardController extends Controller
             ->get()
             ->map(fn (Appointment $appointment): array => [
                 'date' => $appointment->appointment_date?->format('d M Y'),
+                'patientName' => $appointment->patient?->name ?? $patient->name,
                 'type' => $appointment->appointment_type,
                 'diagnosis' => $appointment->diagnosis,
                 'treatment' => $appointment->treatment,

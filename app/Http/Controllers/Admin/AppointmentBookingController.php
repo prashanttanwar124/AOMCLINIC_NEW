@@ -41,8 +41,11 @@ class AppointmentBookingController extends Controller
     public function store(StoreAdminAppointmentRequest $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validated();
+        $secondToken = isset($validated['second_appointment_number']) && filled($validated['second_appointment_number'])
+            ? (int) $validated['second_appointment_number']
+            : null;
 
-        $appointment = DB::transaction(function () use ($validated): Appointment {
+        $appointment = DB::transaction(function () use ($validated, $secondToken): Appointment {
             $slot = Appointment::slotForSession($validated['appointment_session']);
             $selectedToken = (int) $validated['appointment_number'];
             $patientId = (int) $validated['patient_id'];
@@ -60,31 +63,52 @@ class AppointmentBookingController extends Controller
                 ]);
             }
 
-            if ($slotAppointments->contains('patient_id', $patientId)) {
+            if ($secondToken !== null && $slotAppointments->contains('appointment_order', $secondToken)) {
                 throw ValidationException::withMessages([
-                    'appointment_session' => 'This patient already has a booking for this date and session.',
+                    'second_appointment_number' => 'Selected second token is no longer available. Please choose another token.',
                 ]);
             }
 
-            return Appointment::query()->create([
+            $appointmentType = Str::of($validated['appointment_type'])->replace('_', ' ')->title()->toString();
+
+            $first = Appointment::query()->create([
                 'patient_id' => $patientId,
                 'appointment_date' => $validated['appointment_date'],
                 'appointment_number' => (string) $selectedToken,
                 'appointment_order' => $selectedToken,
                 'slot' => $slot,
-                'appointment_type' => Str::of($validated['appointment_type'])->replace('_', ' ')->title()->toString(),
+                'appointment_type' => $appointmentType,
                 'purpose_of_appointment' => $validated['reason_for_visit'] ?? null,
                 'status' => 'pending',
             ]);
+
+            if ($secondToken !== null) {
+                Appointment::query()->create([
+                    'patient_id' => $patientId,
+                    'appointment_date' => $validated['appointment_date'],
+                    'appointment_number' => (string) $secondToken,
+                    'appointment_order' => $secondToken,
+                    'slot' => $slot,
+                    'appointment_type' => $appointmentType,
+                    'purpose_of_appointment' => $validated['reason_for_visit'] ?? null,
+                    'status' => 'pending',
+                ]);
+            }
+
+            return $first;
         });
 
         $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
 
         broadcast(new QueueUpdated($sessionLabel))->toOthers();
 
+        $tokenSummary = $secondToken !== null
+            ? "tokens {$appointment->appointment_number} & {$secondToken}"
+            : "token {$appointment->appointment_number}";
+
         $toast = [
             'type' => 'success',
-            'message' => "Appointment booked for {$appointment->appointment_date->format('d M Y')} ({$sessionLabel}) with token {$appointment->appointment_number}.",
+            'message' => "Appointment booked for {$appointment->appointment_date->format('d M Y')} ({$sessionLabel}) with {$tokenSummary}.",
         ];
 
         if ($request->expectsJson()) {
@@ -148,7 +172,7 @@ class AppointmentBookingController extends Controller
                         return [
                             'availableTokens' => $availableTokens,
                             'closed' => $closed,
-                            'disabled' => false,
+                            'disabled' => $closed,
                             'label' => $label,
                             'remaining' => $remaining,
                             'value' => $value,
@@ -157,11 +181,13 @@ class AppointmentBookingController extends Controller
                     ->values()
                     ->all();
 
+                $disabled = collect($sessions)->every(fn (array $session): bool => (bool) $session['disabled']);
+
                 return [
                     'label' => $date->format('D, d M Y'),
                     'value' => $date->toDateString(),
                     'sessions' => $sessions,
-                    'disabled' => false,
+                    'disabled' => $disabled,
                 ];
             })
             ->all();

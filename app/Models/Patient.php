@@ -107,24 +107,36 @@ class Patient extends Authenticatable
                         ->orWhere('phone', 'like', "%{$token}%")
                         ->orWhere('email', 'like', "%{$token}%")
                         ->orWhere('city', 'like', "%{$token}%")
-                        ->orWhere('address', 'like', "%{$token}%");
+                        ->orWhere('address', 'like', "%{$token}%")
+                        ->orWhereHas('parent', function (Builder $pq) use ($token): void {
+                            $pq->where('name', 'like', "%{$token}%")
+                                ->orWhere('phone', 'like', "%{$token}%")
+                                ->orWhere('email', 'like', "%{$token}%")
+                                ->orWhere('city', 'like', "%{$token}%")
+                                ->orWhere('address', 'like', "%{$token}%");
+                        });
 
                     $digits = preg_replace('/\D+/', '', $token) ?? '';
 
                     if ($digits !== '') {
                         if ($digits !== $token) {
-                            $q->orWhere('phone', 'like', "%{$digits}%");
+                            $q->orWhere('phone', 'like', "%{$digits}%")
+                                ->orWhereHas('parent', fn (Builder $pq) => $pq->where('phone', 'like', "%{$digits}%"));
                         }
 
                         $q->orWhere('country_calling_code', $digits);
 
                         if (ctype_digit($token)) {
-                            $q->orWhere('id', (int) $token);
+                            $q->orWhere('id', (int) $token)
+                                ->orWhere('parent_id', (int) $token);
                         }
 
                         if (str_starts_with($token, '+') && strlen($digits) > 2) {
                             $q->orWhere('phone', 'like', '%'.substr($digits, 2).'%')
-                                ->orWhere('phone', 'like', '%'.substr($digits, 1).'%');
+                                ->orWhere('phone', 'like', '%'.substr($digits, 1).'%')
+                                ->orWhereHas('parent', fn (Builder $pq) => $pq
+                                    ->where('phone', 'like', '%'.substr($digits, 2).'%')
+                                    ->orWhere('phone', 'like', '%'.substr($digits, 1).'%'));
                         }
                     }
                 });

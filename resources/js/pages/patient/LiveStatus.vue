@@ -13,6 +13,7 @@ type QueueItem = {
 
 type PatientApt = {
     id: number;
+    patientName?: string | null;
     token: string;
     session: 'Morning' | 'Evening';
     status: 'running' | 'pending' | 'on_hold' | 'complete';
@@ -35,7 +36,33 @@ const props = defineProps<{
     morningQueue: QueueItem[];
     eveningQueue: QueueItem[];
     patientAppointmentToday: PatientApt | null;
+    patientAppointmentsToday?: PatientApt[];
 }>();
+
+const selectedSession = ref<'Morning' | 'Evening'>(props.currentSession);
+const selectedPatientAptIndex = ref(0);
+
+watch(
+    () => props.currentSession,
+    (newSession) => {
+        selectedSession.value = newSession;
+    },
+);
+
+const allPatientAppointments = computed<PatientApt[]>(() => {
+    if (props.patientAppointmentsToday && props.patientAppointmentsToday.length > 0) {
+        return props.patientAppointmentsToday;
+    }
+    return props.patientAppointmentToday ? [props.patientAppointmentToday] : [];
+});
+
+const activePatientAppointment = computed<PatientApt | null>(() => {
+    return (
+        allPatientAppointments.value[selectedPatientAptIndex.value] ??
+        allPatientAppointments.value[0] ??
+        null
+    );
+});
 
 // Listen to real-time updates via Laravel Reverb
 useEchoPublic('live-queue', 'QueueUpdated', () => {
@@ -52,21 +79,26 @@ useEchoPublic('live-queue', 'QueueUpdated', () => {
             'eveningRunningToken',
             'morningQueue',
             'eveningQueue',
-            'patientAppointmentToday'
-        ]
+            'patientAppointmentToday',
+            'patientAppointmentsToday',
+        ],
     });
 });
 
 const activeQueue = computed(() => {
-    return props.currentSession === 'Morning' ? props.morningQueue : props.eveningQueue;
+    return selectedSession.value === 'Morning' ? props.morningQueue : props.eveningQueue;
 });
 
 const runningToken = computed(() => {
-    return props.currentSession === 'Morning' ? props.morningRunningToken : props.eveningRunningToken;
+    return selectedSession.value === 'Morning' ? props.morningRunningToken : props.eveningRunningToken;
 });
 
 const activeTimings = computed(() => {
-    return props.currentSession === 'Morning' ? props.morningTimings : props.eveningTimings;
+    return selectedSession.value === 'Morning' ? props.morningTimings : props.eveningTimings;
+});
+
+const isActiveSessionClosed = computed(() => {
+    return selectedSession.value === 'Morning' ? props.isMorningClosed : props.isEveningClosed;
 });
 
 const timeToMinutes = (timeStr: string): number => {
@@ -355,36 +387,88 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
             </div>
         </div>
 
-        <!-- Other Session Appointment Reminder Banner -->
-        <div v-if="patientAppointmentToday && patientAppointmentToday.session !== currentSession" class="other-session-banner animate-slide-down">
-            <i class="pi pi-calendar-times reminder-icon"></i>
+        <!-- Session Closed or Outside Regular Hours Banner -->
+        <div v-if="isActiveSessionClosed" class="special-notice-banner animate-slide-down">
+            <i class="pi pi-ban notice-icon"></i>
+            <div class="notice-content">
+                <span class="notice-badge">Closed Today</span>
+                <p class="notice-message">
+                    The <strong>{{ selectedSession }} Session</strong> is closed today due to a scheduled clinic holiday or closure.
+                </p>
+            </div>
+        </div>
+        <div v-else-if="viewState !== 'active' && activeQueue.length === 0" class="other-session-banner animate-slide-down">
+            <i class="pi pi-clock reminder-icon"></i>
             <div class="reminder-content">
-                <span class="reminder-badge">Session Notice</span>
+                <span class="reminder-badge">Clinic Schedule</span>
                 <p class="reminder-message">
-                    <template v-if="patientAppointmentToday.session === 'Evening' && currentSession === 'Morning'">
-                        You have an appointment booked for the <strong>Evening Session (Token {{ formatToken(patientAppointmentToday.token) }})</strong> today. The evening session queue will start at <strong>{{ eveningStartFormatted }}</strong>.
+                    <template v-if="viewState === 'before_start'">
+                        Morning Session starts at <strong>{{ morningStartFormatted }}</strong> ({{ morningTimings || 'Scheduled' }}).
                     </template>
-                    <template v-else-if="patientAppointmentToday.session === 'Morning' && currentSession === 'Evening'">
-                        You had an appointment for the <strong>Morning Session (Token {{ formatToken(patientAppointmentToday.token) }})</strong> today.
-                        <span v-if="patientAppointmentToday.status === 'complete'"> It has been completed.</span>
-                        <span v-else> Please check with the receptionist if you missed your turn.</span>
+                    <template v-else-if="viewState === 'session_gap'">
+                        Morning Session has concluded. Evening Session starts at <strong>{{ eveningStartFormatted }}</strong> ({{ eveningTimings || 'Scheduled' }}).
+                    </template>
+                    <template v-else>
+                        Regular clinic consultation hours for today have concluded. Morning: {{ morningTimings || 'N/A' }} · Evening: {{ eveningTimings || 'N/A' }}.
                     </template>
                 </p>
             </div>
         </div>
+
+        <!-- Other Session Appointment Reminder Banner -->
+        <div v-if="activePatientAppointment && activePatientAppointment.session !== selectedSession" class="other-session-banner animate-slide-down">
+            <i class="pi pi-calendar-times reminder-icon"></i>
+            <div class="reminder-content">
+                <span class="reminder-badge">Session Notice</span>
+                <p class="reminder-message">
+                    You have Token <strong>{{ formatToken(activePatientAppointment.token) }}</strong> booked in the
+                    <strong>{{ activePatientAppointment.session }} Session</strong> today.
+                    <button
+                        type="button"
+                        class="switch-session-inline-btn"
+                        @click="selectedSession = activePatientAppointment.session"
+                    >
+                        Switch to {{ activePatientAppointment.session }} Queue →
+                    </button>
+                </p>
+            </div>
+        </div>
         
-        <!-- Header & Stats Dashboard Widget -->
-        <header v-if="viewState === 'active'" class="dashboard-header-card animate-slide-down">
+        <!-- Header & Stats Dashboard Widget (Always Visible) -->
+        <header class="dashboard-header-card animate-slide-down">
             <div class="session-info">
-                <span class="session-indicator-badge" :class="currentSession.toLowerCase()">
-                    {{ currentSession[0] }}
+                <span class="session-indicator-badge" :class="selectedSession.toLowerCase()">
+                    {{ selectedSession[0] }}
                 </span>
                 <div class="session-details">
-                    <h1>{{ currentSession }} Session</h1>
+                    <div class="session-title-with-tabs">
+                        <h1>{{ selectedSession }} Session</h1>
+                        <div class="live-session-tabs" role="tablist">
+                            <button
+                                type="button"
+                                class="live-session-tab"
+                                :class="{ 'is-active': selectedSession === 'Morning' }"
+                                @click="selectedSession = 'Morning'"
+                            >
+                                <i class="pi pi-sun"></i>
+                                Morning ({{ props.morningQueue.length }})
+                            </button>
+                            <button
+                                type="button"
+                                class="live-session-tab"
+                                :class="{ 'is-active': selectedSession === 'Evening' }"
+                                @click="selectedSession = 'Evening'"
+                            >
+                                <i class="pi pi-moon"></i>
+                                Evening ({{ props.eveningQueue.length }})
+                            </button>
+                        </div>
+                    </div>
                     <span class="timings">
                         <i class="pi pi-calendar"></i> {{ todayFormatted }}
                         <span class="timing-divider" v-if="activeTimings">|</span>
                         <i class="pi pi-clock" v-if="activeTimings"></i> {{ activeTimings }}
+                        <span v-if="isActiveSessionClosed" class="closed-session-pill">Closed Today</span>
                     </span>
                 </div>
             </div>
@@ -401,6 +485,15 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
                 </div>
                 <div class="quick-stat-item">
                     <div class="stat-icon-wrapper timer">
+                        <i class="pi pi-check-circle"></i>
+                    </div>
+                    <div class="stat-text">
+                        <span class="stat-val">{{ activeQueue.filter(q => q.status === 'complete').length }}</span>
+                        <span class="stat-lbl">Completed</span>
+                    </div>
+                </div>
+                <div class="quick-stat-item">
+                    <div class="stat-icon-wrapper room">
                         <i class="pi pi-hourglass"></i>
                     </div>
                     <div class="stat-text">
@@ -408,48 +501,58 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
                         <span class="stat-lbl">Est. Completion</span>
                     </div>
                 </div>
-                <div class="quick-stat-item">
-                    <div class="stat-icon-wrapper room">
-                        <i class="pi pi-heart"></i>
-                    </div>
-                    <div class="stat-text">
-                        <span class="stat-val">Room 1</span>
-                        <span class="stat-lbl">Doctor Room</span>
-                    </div>
-                </div>
             </div>
         </header>
 
-        <!-- Main Dashboard Columns Grid -->
-        <div v-if="viewState === 'active'" class="live-dashboard-grid" :class="{ 'has-appointment': patientAppointmentToday }">
+        <!-- Main Dashboard Columns Grid (Always Visible) -->
+        <div class="live-dashboard-grid" :class="{ 'has-appointment': activePatientAppointment }">
             
             <!-- Column 1: Patient's Personal Status Card (Only if they have an appointment) -->
-            <section v-if="patientAppointmentToday" class="personal-status-card animate-fade-in-left">
+            <section v-if="activePatientAppointment" class="personal-status-card animate-fade-in-left">
                 <div class="personal-status-header">
                     <div class="personal-status-indicator">
                         <span class="pulse-indicator"></span>
                         <h3>Your Live Coupon</h3>
                     </div>
                     <Tag
-                        :value="getStatusLabel(patientAppointmentToday.status)"
-                        :severity="getStatusSeverity(patientAppointmentToday.status)"
+                        :value="getStatusLabel(activePatientAppointment.status)"
+                        :severity="getStatusSeverity(activePatientAppointment.status)"
                         rounded
                         class="premium-tag"
                     />
+                </div>
+
+                <div v-if="allPatientAppointments.length > 1" class="personal-tokens-switcher">
+                    <button
+                        v-for="(apt, idx) in allPatientAppointments"
+                        :key="apt.id"
+                        type="button"
+                        class="personal-token-chip"
+                        :class="{ 'is-active': selectedPatientAptIndex === idx }"
+                        @click="
+                            selectedPatientAptIndex = idx;
+                            selectedSession = apt.session;
+                        "
+                    >
+                        Token #{{ formatToken(apt.token) }}
+                        <span v-if="apt.patientName">({{ apt.patientName }})</span>
+                    </button>
                 </div>
 
                 <div class="personal-status-body">
                     <!-- Premium coupon ticket look -->
                     <div class="personal-ticket">
                         <div class="ticket-header">
-                           <span class="ticket-eyebrow">Clinic Connect Entry Ticket</span>
+                           <span class="ticket-eyebrow">
+                               {{ activePatientAppointment.patientName ? `${activePatientAppointment.patientName} · Entry Ticket` : 'Clinic Connect Entry Ticket' }}
+                           </span>
                         </div>
                         
                         <div class="ticket-body">
                            <div class="ticket-number-wrapper">
                                <span class="ticket-number-label">Token</span>
                                <span class="ticket-number">
-                                   {{ formatToken(patientAppointmentToday.token) }}
+                                   {{ formatToken(activePatientAppointment.token) }}
                                 </span>
                            </div>
                         </div>
@@ -459,29 +562,29 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
                             <div class="ticket-barcode">
                                 <div v-for="n in 32" :key="n" class="barcode-line" :style="{ width: [1, 2, 3][n % 3] + 'px', opacity: n % 5 === 0 ? 0.35 : 1 }"></div>
                             </div>
-                            <span class="barcode-serial">CC-TKT-{{ formatToken(patientAppointmentToday.token) }}-{{ today.replace(/-/g, '') }}</span>
+                            <span class="barcode-serial">CC-TKT-{{ formatToken(activePatientAppointment.token) }}-{{ today.replace(/-/g, '') }}</span>
                         </div>
 
                         <div class="ticket-footer">
                             <div class="ticket-meta-grid">
                                 <div class="meta-item">
                                     <span class="meta-label">Active Session</span>
-                                    <span class="meta-value">{{ patientAppointmentToday.session }}</span>
+                                    <span class="meta-value">{{ activePatientAppointment.session }}</span>
                                 </div>
                                 <div class="meta-item border-left-meta">
                                     <span class="meta-label">Line Position</span>
                                     <span class="meta-value">
-                                        <span v-if="patientAppointmentToday.status === 'running'" class="status-running-text">
+                                        <span v-if="activePatientAppointment.status === 'running'" class="status-running-text">
                                             Your Turn!
                                         </span>
-                                        <span v-else-if="patientAppointmentToday.status === 'complete'" class="status-complete-text">
+                                        <span v-else-if="activePatientAppointment.status === 'complete'" class="status-complete-text">
                                             Completed
                                         </span>
-                                        <span v-else-if="patientAppointmentToday.onHold" class="status-hold-text">
+                                        <span v-else-if="activePatientAppointment.onHold" class="status-hold-text">
                                             On Hold
                                         </span>
                                         <span v-else>
-                                            #{{ patientAppointmentToday.queuePosition + 1 }} in line
+                                            #{{ activePatientAppointment.queuePosition + 1 }} in line
                                         </span>
                                     </span>
                                 </div>
@@ -490,14 +593,14 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
                     </div>
 
                     <!-- Dynamic estimated waiting duration countdown -->
-                    <div class="status-summary-bar" v-if="patientAppointmentToday.status === 'pending' && !patientAppointmentToday.onHold">
+                    <div class="status-summary-bar" v-if="activePatientAppointment.status === 'pending' && !activePatientAppointment.onHold">
                         <div class="wait-lead-stat">
-                            <span class="stat-number">{{ patientAppointmentToday.queuePosition }}</span>
+                            <span class="stat-number">{{ activePatientAppointment.queuePosition }}</span>
                             <span class="stat-desc">patients waiting ahead of you</span>
                         </div>
                         <div class="status-tip-alert">
                             <i class="pi pi-info-circle"></i>
-                            <p>Please remain in the lobby area. We'll announce Token {{ formatToken(patientAppointmentToday.token) }} at approximately {{ getExpectedTime(patientAppointmentToday.queuePosition * averageTimePerPatient) }}.</p>
+                            <p>Please remain in the lobby area. We'll announce Token {{ formatToken(activePatientAppointment.token) }} at approximately {{ getExpectedTime(activePatientAppointment.queuePosition * averageTimePerPatient) }}.</p>
                         </div>
                     </div>
                 </div>
@@ -508,25 +611,28 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
                 <div class="serving-card">
                     <div class="running-content">
                         <div class="running-header">
-                            <span class="card-eyebrow">NOW SERVING</span>
+                            <span class="card-eyebrow">NOW SERVING · {{ selectedSession.toUpperCase() }}</span>
                             <div class="soundwave">
                                 <span v-for="n in 5" :key="n" class="soundwave-bar" :style="{ animationDelay: (n * 0.15) + 's' }"></span>
                             </div>
                         </div>
                         
-                        <div v-if="runningToken" class="huge-token-number">
+                        <div v-if="isActiveSessionClosed" class="empty-serving">
+                            Session Closed Today
+                        </div>
+                        <div v-else-if="runningToken" class="huge-token-number">
                             Token {{ formatToken(runningToken) }}
                         </div>
                         <div v-else class="empty-serving">
-                            Waiting for Patient
+                            {{ activeQueue.length > 0 ? 'All Tokens Completed' : 'Waiting for First Patient' }}
                         </div>
 
                         <div class="serving-footer">
                             <div class="active-room-indicator">
                                 <span class="dot-green"></span>
-                                <span>Proceed to Room 1</span>
+                                <span>Proceed to Consultation Room</span>
                             </div>
-                            <span class="sync-clock">Refreshed: {{ new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) }}</span>
+                            <span class="sync-clock">Live Sync Active</span>
                         </div>
                     </div>
                 </div>
@@ -536,8 +642,8 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
             <section class="queue-list-panel animate-fade-in-right">
                 <div class="queue-list-card">
                     <div class="queue-card-header">
-                        <h3>Live Waiting List</h3>
-                        <span class="queue-count-badge">{{ activeQueue.filter(q => q.status === 'pending').length }} Active</span>
+                        <h3>{{ selectedSession }} Waiting List</h3>
+                        <span class="queue-count-badge">{{ activeQueue.filter(q => q.status === 'pending').length }} Waiting</span>
                     </div>
 
                     <!-- Capped and scrollable timeline list -->
@@ -569,7 +675,7 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
                             </div>
                             
                             <div v-if="!activeQueue.some(q => q.status === 'pending')" class="empty-list-state">
-                                No tokens are currently waiting in line.
+                                No tokens are currently waiting in the {{ selectedSession.toLowerCase() }} line.
                             </div>
                         </div>
                     </div>
@@ -601,57 +707,6 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
                 </div>
             </section>
 
-        </div>
-
-        <!-- Scheduled Timings Info Card -->
-        <div v-else class="scheduled-timings-panel animate-fade-in">
-            <div class="timings-card">
-                <div class="timings-icon-wrapper" :class="viewState">
-                    <i class="pi pi-clock"></i>
-                </div>
-                
-                <div class="timings-header-text">
-                    <h2>
-                        <template v-if="viewState === 'closed_session'">Session Closed Today</template>
-                        <template v-else-if="viewState === 'before_start'">Today's Clinic Schedule</template>
-                        <template v-else-if="viewState === 'session_gap'">Upcoming Session Schedule</template>
-                        <template v-else>Clinic Schedule Concluded</template>
-                    </h2>
-                    
-                    <p class="description">
-                        <template v-if="viewState === 'closed_session'">
-                            The <strong>{{ currentSession }} Session</strong> is closed today due to a scheduled holiday or closure.
-                        </template>
-                        <template v-else-if="viewState === 'before_start'">
-                            The morning session queue will become active at <strong>{{ morningStartFormatted }}</strong>.
-                        </template>
-                        <template v-else-if="viewState === 'session_gap'">
-                            The morning session has concluded. The evening session queue will start at <strong>{{ eveningStartFormatted }}</strong>.
-                        </template>
-                        <template v-else>
-                            All clinic sessions for today have concluded.
-                        </template>
-                    </p>
-                </div>
-                
-                <div class="timings-details-container">
-                    <div class="timing-row-item" :class="{ active: viewState === 'before_start' || (currentSession === 'Morning' && viewState === 'closed_session'), closed: isMorningClosed }">
-                        <div class="session-info-left">
-                            <span class="indicator morning-dot"></span>
-                            <span class="session-name">Morning Session</span>
-                        </div>
-                        <span class="session-time-val">{{ isMorningClosed ? 'Closed Today' : (morningTimings || 'Not Scheduled') }}</span>
-                    </div>
-                    
-                    <div class="timing-row-item" :class="{ active: viewState === 'session_gap' || (currentSession === 'Evening' && viewState === 'closed_session'), closed: isEveningClosed }">
-                        <div class="session-info-left">
-                            <span class="indicator evening-dot"></span>
-                            <span class="session-name">Evening Session</span>
-                        </div>
-                        <span class="session-time-val">{{ isEveningClosed ? 'Closed Today' : (eveningTimings || 'Not Scheduled') }}</span>
-                    </div>
-                </div>
-            </div>
         </div>
 
     </div>
@@ -1802,5 +1857,91 @@ function getStatusSeverity(status: QueueItem['status'] | PatientApt['status']): 
     color: #0f172a;
     line-height: 1.5;
     margin: 0;
+}
+
+.session-title-with-tabs {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.live-session-tabs {
+    display: inline-flex;
+    align-items: center;
+    background: #f1f5f9;
+    padding: 0.22rem;
+    border-radius: 999px;
+    border: 1px solid #e2e8f0;
+    gap: 0.2rem;
+}
+
+.live-session-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    border: none;
+    background: transparent;
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.live-session-tab.is-active {
+    background: #0c6e72;
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(12, 110, 114, 0.25);
+}
+
+.closed-session-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.55rem;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.switch-session-inline-btn {
+    margin-left: 0.5rem;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid #0c6e72;
+    background: #0c6e72;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.personal-tokens-switcher {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+}
+
+.personal-token-chip {
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.personal-token-chip.is-active {
+    background: #0c6e72;
+    border-color: #0c6e72;
+    color: #ffffff;
 }
 </style>

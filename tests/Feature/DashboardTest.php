@@ -21,5 +21,11 @@ test('authenticated users can visit the dashboard', function () {
             ->has('stats')
             ->has('chartData')
             ->has('analyticsSummary')
+            ->has('sessionSplit')
+            ->has('visitTypeSplit')
+            ->has('paymentBreakdown')
+            ->has('queueBreakdown')
+            ->has('lowStockMedicines')
+            ->has('recentAppointments')
         );
 });

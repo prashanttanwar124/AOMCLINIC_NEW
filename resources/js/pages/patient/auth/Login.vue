@@ -7,12 +7,12 @@ import { store } from '@/actions/App/Http/Controllers/Patient/Auth/Authenticated
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import TextLink from '@/components/TextLink.vue';
-import { register, liveStatus } from '@/routes/patient';
+import { liveStatus } from '@/routes/patient';
 
 defineOptions({
     layout: {
-        title: 'Patient login',
-        description: 'Sign in to access your patient portal',
+        title: 'Patient Login',
+        description: 'Enter your email and password to access your patient portal',
     },
 });
 </script>
@@ -38,6 +38,7 @@ defineOptions({
                     autocomplete="email"
                     placeholder="patient@example.com"
                     fluid
+                    :invalid="!!errors.email"
                 />
                 <InputError :message="errors.email" />
             </div>
@@ -50,6 +51,7 @@ defineOptions({
                     required
                     autocomplete="current-password"
                     placeholder="Password"
+                    :invalid="!!errors.password"
                 />
                 <InputError :message="errors.password" />
             </div>
@@ -59,17 +61,18 @@ defineOptions({
                 <label for="remember">Remember me</label>
             </div>
 
-            <Button type="submit" label="Log in" :loading="processing" fluid />
+            <Button
+                type="submit"
+                label="Log in"
+                icon="pi pi-sign-in"
+                :loading="processing"
+                fluid
+                data-test="patient-login-button"
+            />
         </div>
 
-        <div class="form-footer form-footer--stacked">
-            <div>
-                Need a patient account?
-                <TextLink :href="register()">Register here</TextLink>
-            </div>
-            <div class="form-footer__hint">
-                Or check the <TextLink :href="liveStatus()">Live Queue Status</TextLink> without logging in.
-            </div>
+        <div class="form-footer">
+            <TextLink :href="liveStatus()">View Live Queue Status</TextLink>
         </div>
     </Form>
 </template>
@@ -78,18 +81,18 @@ defineOptions({
 .remember-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-}
-
-.form-footer--stacked {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    align-items: center;
-}
-
-.form-footer__hint {
-    font-size: 0.85rem;
+    gap: 0.65rem;
+    font-size: 0.88rem;
     color: var(--text-secondary-color);
+}
+
+.remember-row label {
+    cursor: pointer;
+    user-select: none;
+}
+
+.form-footer {
+    padding-top: 0.25rem;
+    font-size: 0.86rem;
 }
 </style>

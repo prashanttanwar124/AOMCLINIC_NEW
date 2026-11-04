@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -18,7 +19,7 @@ class StoreCourierParcelRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -31,6 +32,8 @@ class StoreCourierParcelRequest extends FormRequest
             'medicines' => ['nullable', 'array'],
             'medicines.*' => ['required', 'string', 'max:255'],
             'address' => ['nullable', 'string'],
+            'complaints' => ['nullable', 'string'],
+            'days_prescription' => ['nullable', 'integer', 'min:1', 'max:365'],
             'notes' => ['nullable', 'string'],
             'delivered_date' => ['nullable', 'date'],
             'instructions_given' => ['nullable', 'boolean'],

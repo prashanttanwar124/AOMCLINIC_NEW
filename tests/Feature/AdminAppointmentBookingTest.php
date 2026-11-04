@@ -1,9 +1,11 @@
 <?php
 
+use App\Events\QueueUpdated;
 use App\Models\Appointment;
 use App\Models\BookingSetting;
 use App\Models\Patient;
 use App\Models\User;
+use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guest users are redirected to login from admin booking routes', function () {
@@ -47,8 +49,8 @@ test('authenticated staff can load admin booking form', function () {
 });
 
 test('admin booking creates appointment successfully', function () {
-    Illuminate\Support\Facades\Event::fake([
-        App\Events\QueueUpdated::class,
+    Event::fake([
+        QueueUpdated::class,
     ]);
 
     $user = User::factory()->create();
@@ -78,7 +80,7 @@ test('admin booking creates appointment successfully', function () {
         ->and($appointment->slot)->toBe(Appointment::SLOT_MORNING)
         ->and($appointment->purpose_of_appointment)->toBe('Staff booked appointment');
 
-    Illuminate\Support\Facades\Event::assertDispatched(App\Events\QueueUpdated::class);
+    Event::assertDispatched(QueueUpdated::class);
 });
 
 test('admin booking works even when online patient booking is disabled globally', function () {
@@ -107,7 +109,7 @@ test('admin booking works even when online patient booking is disabled globally'
         ->and($appointment->appointment_number)->toBe('2');
 });
 
-test('admin booking checks duplicate booking for the same patient', function () {
+test('admin booking allows double appointments for the same patient on the same date and session', function () {
     $user = User::factory()->create();
     $patient = Patient::factory()->create();
 
@@ -126,17 +128,18 @@ test('admin booking checks duplicate booking for the same patient', function () 
         'slot' => Appointment::SLOT_MORNING,
     ]);
 
-    // Try booking again for the same date/session
+    // Book a second appointment (or double token) for the same patient on the same date/session
     $response = $this->actingAs($user)->post(route('admin.appointments.book.store'), [
         'patient_id' => $patient->id,
         'appointment_date' => today()->toDateString(),
         'appointment_session' => 'morning',
         'appointment_number' => 2,
+        'second_appointment_number' => 3,
         'appointment_type' => 'new',
     ]);
 
-    $response->assertSessionHasErrors('appointment_session');
-    expect(Appointment::where('patient_id', $patient->id)->count())->toBe(1);
+    $response->assertRedirect(route('booking'));
+    expect(Appointment::where('patient_id', $patient->id)->count())->toBe(3);
 });
 
 test('admin booking can bypass clinic closures', function () {
@@ -191,7 +194,7 @@ test('admin booking can overbook beyond capacity', function () {
     ]);
 
     $response->assertRedirect(route('booking'));
-    
+
     $appointment = Appointment::where('patient_id', $patient->id)->first();
     expect($appointment)->not->toBeNull()
         ->and($appointment->appointment_order)->toBe(2);

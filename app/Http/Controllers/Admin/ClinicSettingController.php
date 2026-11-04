@@ -31,7 +31,7 @@ class ClinicSettingController extends Controller
                 'address' => $settings->address,
                 'phone' => $settings->phone,
                 'email' => $settings->email,
-                'logo_url' => $settings->logo_path ? Storage::disk('public')->url($settings->logo_path) : null,
+                'logo_url' => $settings->logoUrl(),
             ],
         ]);
     }
@@ -55,8 +55,8 @@ class ClinicSettingController extends Controller
         ]);
 
         $settings = ClinicSetting::current();
-        if (!$settings->exists) {
-            $settings = new ClinicSetting();
+        if (! $settings->exists) {
+            $settings = new ClinicSetting;
         }
 
         if ($request->hasFile('logo')) {

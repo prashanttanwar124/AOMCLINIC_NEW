@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import Button from 'primevue/button';
+import Divider from 'primevue/divider';
+import { computed, ref } from 'vue';
 
 type Props = {
     appointment: {
@@ -28,6 +30,43 @@ type Props = {
 
 const props = defineProps<Props>();
 
+const logoLoadError = ref(false);
+
+const resolvedLogoUrl = computed<string | null>(() => {
+    const raw = props.clinic.logo_url;
+    if (!raw || logoLoadError.value) {
+        return null;
+    }
+    const storageIdx = raw.indexOf('/storage/');
+    if (storageIdx !== -1) {
+        return raw.slice(storageIdx);
+    }
+    return raw;
+});
+
+const doctorQualificationsLine = computed<string>(() => {
+    return [props.clinic.doctor_qualifications, props.clinic.doctor_title]
+        .map((item) => item?.trim())
+        .filter(Boolean)
+        .join(' • ');
+});
+
+const registrationLine = computed<string>(() => {
+    const parts: string[] = [];
+
+    if (props.clinic.doctor_registration_no?.trim()) {
+        const raw = props.clinic.doctor_registration_no.trim();
+        parts.push(/reg/i.test(raw) ? raw : `Reg. No.: ${raw}`);
+    }
+
+    if (props.clinic.clinic_registration_no?.trim()) {
+        const raw = props.clinic.clinic_registration_no.trim();
+        parts.push(/reg/i.test(raw) ? raw : `Clinic Reg.: ${raw}`);
+    }
+
+    return parts.join(' • ');
+});
+
 function handlePrint(): void {
     window.print();
 }
@@ -38,147 +77,201 @@ function handleClose(): void {
 </script>
 
 <template>
-    <Head :title="`Receipt - Appointment #${props.appointment.id}`" />
+    <div class="receipt-print-page">
+        <Head :title="`Receipt - Appointment #${props.appointment.id}`" />
 
-    <!-- Print control bar: visible on screen only, hidden during printing -->
-    <div class="print-control-bar no-print">
-        <div class="print-control-bar__content">
-            <span class="print-control-bar__title">Receipt Preview</span>
-            <div class="print-control-bar__actions">
-                <Button
-                    label="Print Receipt"
-                    icon="pi pi-print"
-                    class="p-button-primary"
-                    @click="handlePrint"
-                />
-                <Button
-                    label="Close"
-                    icon="pi pi-times"
-                    severity="secondary"
-                    outlined
-                    @click="handleClose"
-                />
+        <!-- Print control bar: visible on screen only, hidden during printing -->
+        <div class="print-control-bar no-print">
+            <div class="print-control-bar__content">
+                <span class="print-control-bar__title">Receipt Preview</span>
+                <div class="print-control-bar__actions">
+                    <Button
+                        label="Print Receipt"
+                        icon="pi pi-print"
+                        size="small"
+                        class="p-button-primary"
+                        @click="handlePrint"
+                    />
+                    <Button
+                        label="Close"
+                        icon="pi pi-times"
+                        severity="secondary"
+                        outlined
+                        size="small"
+                        @click="handleClose"
+                    />
+                </div>
             </div>
         </div>
-    </div>
 
-    <!-- Receipt Container -->
-    <div class="receipt-outer-container">
-        <div class="receipt-card">
-            <!-- Header section -->
-            <header class="receipt-header">
-                <div class="receipt-header__left">
-                    <div class="clinic-brand-row">
-                        <img
-                            v-if="props.clinic.logo_url"
-                            :src="props.clinic.logo_url"
-                            alt="Clinic Logo"
-                            class="clinic-logo"
-                        />
-                        <div v-else class="clinic-logo-placeholder">
-                            <i class="pi pi-building"></i>
-                        </div>
-                        <div class="clinic-brand-details">
-                            <h1 class="clinic-title">{{ props.clinic.clinic_name || 'AOM CLINIC' }}</h1>
-                            <span class="clinic-tagline">HEALING CONSCIOUSLY</span>
-                        </div>
-                    </div>
-
-                    <div class="doctor-details">
-                        <h2 class="doctor-name">{{ props.clinic.doctor_name || 'Dr. Appasaheb S. Waghmare' }}</h2>
-                        <div class="doctor-meta">
-                            <span v-if="props.clinic.doctor_qualifications" class="doctor-qualifications">
-                                {{ props.clinic.doctor_qualifications }}
-                            </span>
-                            <span v-if="props.clinic.doctor_title" class="doctor-title">
-                                {{ props.clinic.doctor_title }}
-                            </span>
-                            <span v-if="props.clinic.doctor_registration_no" class="doctor-reg">
-                                Reg. No.: {{ props.clinic.doctor_registration_no }}
-                            </span>
-                            <span v-if="props.clinic.clinic_registration_no" class="clinic-reg">
-                                Clinic Reg.: {{ props.clinic.clinic_registration_no }}
-                            </span>
-                            <span v-if="props.clinic.address" class="clinic-address">
-                                {{ props.clinic.address }}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="receipt-header__right">
-                    <div class="receipt-badge">APPOINTMENT RECEIPT</div>
-                    
-                    <div class="receipt-meta-box mt-4">
-                        <div class="receipt-meta-item">
-                            <span class="receipt-meta-label">RECEIPT DATE</span>
-                            <span class="receipt-meta-value">{{ props.appointment.appointment_date_label }}</span>
-                        </div>
-                        <div class="receipt-meta-item mt-3">
-                            <span class="receipt-meta-label">RECEIPT TIME</span>
-                            <span class="receipt-meta-value">{{ props.appointment.appointment_time_label }}</span>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <Divider class="my-4" />
-
-            <!-- Payment details section -->
-            <main class="receipt-body">
-                <div class="payment-details-layout">
-                    <!-- Left side: details list -->
-                    <div class="payment-details-list">
-                        <h3 class="section-title">PAYMENT DETAILS</h3>
-                        
-                        <div class="details-table">
-                            <div class="details-row">
-                                <span class="details-label">Received From</span>
-                                <strong class="details-value">{{ props.appointment.patient_name }}</strong>
+        <!-- Receipt Container -->
+        <div class="receipt-outer-container">
+            <div class="receipt-card">
+                <!-- Header section -->
+                <header class="receipt-header">
+                    <div class="receipt-header__left">
+                        <div class="clinic-brand-lockup">
+                            <img
+                                v-if="resolvedLogoUrl"
+                                :src="resolvedLogoUrl"
+                                alt="AOM Clinic Logo"
+                                class="clinic-logo-banner"
+                                @error="logoLoadError = true"
+                            />
+                            <div v-else class="clinic-brand-row">
+                                <div class="clinic-logo-placeholder">
+                                    <i class="pi pi-building"></i>
+                                </div>
+                                <div class="clinic-brand-details">
+                                    <h1 class="clinic-title">
+                                        {{
+                                            props.clinic.clinic_name &&
+                                            props.clinic.clinic_name.length > 2
+                                                ? props.clinic.clinic_name
+                                                : 'AOM CLINIC'
+                                        }}
+                                    </h1>
+                                    <span class="clinic-tagline"
+                                        >WE TAKE CARE OF YOUR HEALTH</span
+                                    >
+                                </div>
                             </div>
-                            <div class="details-row">
-                                <span class="details-label">Patient Name</span>
-                                <strong class="details-value">{{ props.appointment.patient_name }}</strong>
-                            </div>
-                            <div class="details-row">
-                                <span class="details-label">Diagnosis</span>
-                                <span class="details-value">{{ props.appointment.diagnosis }}</span>
-                            </div>
-                            <div class="details-row">
-                                <span class="details-label">Duration</span>
-                                <span class="details-value">
-                                    {{ props.appointment.days_prescription > 0 ? `${props.appointment.days_prescription} Days` : '-' }}
+                        </div>
+
+                        <div class="doctor-details">
+                            <h2 class="doctor-name">
+                                {{
+                                    props.clinic.doctor_name ||
+                                    'Dr. Appasaheb S. Waghmare'
+                                }}
+                            </h2>
+                            <div class="doctor-meta">
+                                <span
+                                    v-if="doctorQualificationsLine"
+                                    class="doctor-qualifications"
+                                >
+                                    {{ doctorQualificationsLine }}
+                                </span>
+                                <span v-if="registrationLine" class="doctor-reg">
+                                    {{ registrationLine }}
+                                </span>
+                                <span
+                                    v-if="props.clinic.address"
+                                    class="clinic-address"
+                                >
+                                    {{ props.clinic.address }}
                                 </span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Right side: amount received box -->
-                    <div class="amount-received-card">
-                        <span class="amount-label">AMOUNT RECEIVED</span>
-                        <h2 class="amount-value">Rs. {{ props.appointment.amount }}</h2>
-                        <p class="amount-description">
-                            This receipt confirms payment collected for the appointment and medicine handover process.
-                        </p>
+                    <div class="receipt-header__right">
+                        <div class="receipt-badge">APPOINTMENT RECEIPT</div>
+
+                        <div class="receipt-meta-box">
+                            <div class="receipt-meta-item">
+                                <span class="receipt-meta-label"
+                                    >RECEIPT DATE</span
+                                >
+                                <span class="receipt-meta-value">{{
+                                    props.appointment.appointment_date_label
+                                }}</span>
+                            </div>
+                            <div class="receipt-meta-item">
+                                <span class="receipt-meta-label"
+                                    >RECEIPT TIME</span
+                                >
+                                <span class="receipt-meta-value">{{
+                                    props.appointment.appointment_time_label
+                                }}</span>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </main>
+                </header>
 
-            <Divider class="my-5" />
+                <Divider class="my-4" />
 
-            <!-- Footer section -->
-            <footer class="receipt-footer">
-                <p class="footer-note">This is a computer-generated receipt for clinic records.</p>
-            </footer>
+                <!-- Payment details section -->
+                <main class="receipt-body">
+                    <div class="payment-details-layout">
+                        <!-- Left side: details list -->
+                        <div class="payment-details-list">
+                            <h3 class="section-title">PAYMENT DETAILS</h3>
+
+                            <div class="details-table">
+                                <div class="details-row">
+                                    <span class="details-label"
+                                        >Received From</span
+                                    >
+                                    <strong class="details-value">{{
+                                        props.appointment.patient_name
+                                    }}</strong>
+                                </div>
+                                <div class="details-row">
+                                    <span class="details-label"
+                                        >Patient Name</span
+                                    >
+                                    <strong class="details-value">{{
+                                        props.appointment.patient_name
+                                    }}</strong>
+                                </div>
+                                <div class="details-row">
+                                    <span class="details-label">Diagnosis</span>
+                                    <span class="details-value">{{
+                                        props.appointment.diagnosis
+                                    }}</span>
+                                </div>
+                                <div class="details-row">
+                                    <span class="details-label">Duration</span>
+                                    <span class="details-value">
+                                        {{
+                                            props.appointment
+                                                .days_prescription > 0
+                                                ? `${props.appointment.days_prescription} Days`
+                                                : '-'
+                                        }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right side: amount received box -->
+                        <div class="amount-received-card">
+                            <span class="amount-label">AMOUNT RECEIVED</span>
+                            <h2 class="amount-value">
+                                Rs. {{ props.appointment.amount }}
+                            </h2>
+                            <p class="amount-description">
+                                This receipt confirms payment collected for the
+                                appointment and medicine handover process.
+                            </p>
+                        </div>
+                    </div>
+                </main>
+
+                <Divider class="my-5" />
+
+                <!-- Footer section -->
+                <footer class="receipt-footer">
+                    <p class="footer-note">
+                        This is a computer-generated receipt for clinic records.
+                    </p>
+                </footer>
+            </div>
         </div>
     </div>
 </template>
 
 <style scoped>
+.receipt-print-page {
+    min-height: 100vh;
+    background: #f1f5f9;
+}
+
 .print-control-bar {
     background: #1e293b;
     color: #fff;
-    padding: 0.75rem 1.5rem;
+    padding: 0.65rem 1.5rem;
     position: sticky;
     top: 0;
     z-index: 100;
@@ -195,29 +288,29 @@ function handleClose(): void {
 
 .print-control-bar__title {
     font-weight: 700;
-    font-size: 1.05rem;
+    font-size: 0.98rem;
 }
 
 .print-control-bar__actions {
     display: flex;
-    gap: 0.75rem;
+    gap: 0.65rem;
 }
 
 .receipt-outer-container {
     background: #f1f5f9;
-    padding: 2rem 1rem;
-    min-height: 100vh;
+    padding: 1.5rem 1rem 2.5rem;
     display: flex;
     justify-content: center;
 }
 
 .receipt-card {
     background: #fff;
-    border: 1px solid var(--surface-border, #e2e8f0);
+    color: #0f172a;
+    border: 1px solid #e2e8f0;
     border-radius: 8px;
     width: 100%;
     max-width: 840px;
-    padding: 3rem;
+    padding: 2rem 2.5rem;
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04);
 }
 
@@ -232,29 +325,37 @@ function handleClose(): void {
     flex: 1;
 }
 
+.clinic-brand-lockup {
+    display: flex;
+    align-items: center;
+}
+
+.clinic-logo-banner {
+    height: 3.85rem;
+    width: auto;
+    max-width: 270px;
+    object-fit: contain;
+    object-position: left center;
+    display: block;
+    margin-left: -0.45rem;
+}
+
 .clinic-brand-row {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
-}
-
-.clinic-logo {
-    width: 5.5rem;
-    height: 5.5rem;
-    object-fit: contain;
-    flex-shrink: 0;
+    gap: 1rem;
 }
 
 .clinic-logo-placeholder {
-    width: 5.5rem;
-    height: 5.5rem;
-    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
-    color: var(--primary-color);
+    width: 3.25rem;
+    height: 3.25rem;
+    background: #f0fdfa;
+    color: #0d9488;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 8px;
-    font-size: 2.2rem;
+    font-size: 1.5rem;
     flex-shrink: 0;
 }
 
@@ -265,7 +366,7 @@ function handleClose(): void {
 
 .clinic-title {
     margin: 0;
-    font-size: 1.65rem;
+    font-size: 1.45rem;
     font-weight: 800;
     color: #0f766e;
     letter-spacing: -0.02em;
@@ -273,48 +374,45 @@ function handleClose(): void {
 }
 
 .clinic-tagline {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 700;
     color: #0d9488;
-    letter-spacing: 0.15em;
-    margin-top: 0.15rem;
+    letter-spacing: 0.14em;
+    margin-top: 0.12rem;
     text-transform: uppercase;
 }
 
 .doctor-details {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin-top: 1.5rem;
+    gap: 0.15rem;
+    margin-top: 0.75rem;
 }
 
 .doctor-name {
     margin: 0;
-    font-size: 1.45rem;
-    font-weight: 700;
+    font-size: 1.18rem;
+    font-weight: 800;
     color: #0f172a;
 }
 
 .doctor-meta {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
-    font-size: 0.88rem;
+    gap: 0.1rem;
+    font-size: 0.82rem;
     color: #475569;
 }
 
 .doctor-qualifications {
     font-weight: 700;
-}
-
-.doctor-title {
-    font-weight: 600;
+    color: #0f766e;
 }
 
 .clinic-address {
-    margin-top: 0.35rem;
-    font-size: 0.88rem;
-    line-height: 1.45;
+    margin-top: 0.15rem;
+    font-size: 0.78rem;
+    line-height: 1.4;
     color: #64748b;
 }
 
@@ -329,10 +427,10 @@ function handleClose(): void {
     background: #f0fdfa;
     color: #0d9488;
     font-weight: 700;
-    font-size: 0.78rem;
-    padding: 0.4rem 0.8rem;
+    font-size: 0.74rem;
+    padding: 0.35rem 0.75rem;
     border-radius: 4px;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
 }
 
 .receipt-meta-box {
@@ -340,24 +438,25 @@ function handleClose(): void {
     flex-direction: column;
     align-items: flex-end;
     text-align: right;
-    margin-top: 1.5rem;
+    gap: 0.55rem;
+    margin-top: 0.85rem;
 }
 
 .receipt-meta-item {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: 0.1rem;
 }
 
 .receipt-meta-label {
-    font-size: 0.68rem;
+    font-size: 0.65rem;
     font-weight: 700;
     color: #94a3b8;
     letter-spacing: 0.05em;
 }
 
 .receipt-meta-value {
-    font-size: 1.2rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #1e293b;
 }
@@ -458,13 +557,14 @@ function handleClose(): void {
     .no-print {
         display: none !important;
     }
-    
+
+    .receipt-print-page,
     .receipt-outer-container {
         background: #fff !important;
         padding: 0 !important;
         min-height: auto !important;
     }
-    
+
     .receipt-card {
         border: none !important;
         padding: 0 !important;

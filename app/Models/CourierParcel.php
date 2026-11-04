@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'payment_status',
     'medicines',
     'address',
+    'complaints',
+    'days_prescription',
     'notes',
     'delivered_date',
     'instructions_given',
@@ -37,6 +39,7 @@ class CourierParcel extends Model
             'instructions_given' => 'boolean',
             'medicines' => 'array',
             'amount' => 'decimal:2',
+            'days_prescription' => 'integer',
         ];
     }
 

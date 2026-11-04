@@ -583,10 +583,6 @@ const filteredMedicines = ref<any[]>([]);
 
 async function searchMedicines(event: { query: string }): Promise<void> {
     const query = event.query.trim();
-    if (!query) {
-        filteredMedicines.value = [];
-        return;
-    }
     try {
         const { data } = await http.get(searchMedicinesAction({ query: { query } }).url);
         filteredMedicines.value = data;
@@ -898,15 +894,27 @@ function queueStatusSeverity(
                                         v-model="medicinesChips"
                                         :suggestions="filteredMedicines"
                                         multiple
+                                        dropdown
                                         fluid
                                         forceSelection
                                         option-label="label"
                                         dataKey="id"
                                         :invalid="Boolean(fieldError(field.key))"
-                                        placeholder="Search and select medicines..."
+                                        placeholder="Search medicine name, potency (200C), or size (30ml)..."
                                         class="w-full"
                                         @complete="searchMedicines"
-                                    />
+                                    >
+                                        <template #option="slotProps">
+                                            <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 0.75rem;">
+                                                <span style="font-weight: 700; font-size: 0.85rem;">{{ slotProps.option.label }}</span>
+                                                <Tag
+                                                    v-if="slotProps.option.stock !== undefined"
+                                                    :value="`Stock: ${slotProps.option.stock}`"
+                                                    :severity="slotProps.option.stock <= 0 ? 'danger' : slotProps.option.stock < 10 ? 'warn' : 'success'"
+                                                />
+                                            </div>
+                                        </template>
+                                    </AutoComplete>
                                     <DatePicker
                                         v-else-if="field.type === 'date'"
                                         :input-id="`field-${field.key}`"

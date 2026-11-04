@@ -75,6 +75,103 @@ test('authenticated staff can search the appointments ledger by patient name', f
             ->where('filters.search', 'Ravi'));
 });
 
+test('authenticated staff can filter the appointments ledger by date range, date preset, status, session, visit type, payment mode, and pharmacy status', function () {
+    $user = User::factory()->create();
+
+    $patientA = Patient::factory()->create(['name' => 'Aarav Mehta']);
+    $patientB = Patient::factory()->create(['name' => 'Nisha Kapoor']);
+    $patientC = Patient::factory()->create(['name' => 'Suresh Iyer']);
+
+    Appointment::factory()->create([
+        'patient_id' => $patientA->id,
+        'appointment_date' => today()->toDateString(),
+        'slot' => Appointment::SLOT_MORNING,
+        'appointment_number' => '1',
+        'appointment_order' => 1,
+        'appointment_type' => 'New',
+        'status' => 'complete',
+        'on_hold' => false,
+        'amount' => 500,
+        'payment_type' => 'UPI',
+        'medicine_status' => true,
+        'diagnosis' => 'Migraine',
+    ]);
+
+    Appointment::factory()->create([
+        'patient_id' => $patientB->id,
+        'appointment_date' => today()->subDays(5)->toDateString(),
+        'slot' => Appointment::SLOT_EVENING,
+        'appointment_number' => '2',
+        'appointment_order' => 2,
+        'appointment_type' => 'Follow Up',
+        'status' => 'pending',
+        'on_hold' => true,
+        'amount' => 0,
+        'medicine_status' => false,
+    ]);
+
+    Appointment::factory()->create([
+        'patient_id' => $patientC->id,
+        'appointment_date' => '2026-01-15',
+        'slot' => Appointment::SLOT_MORNING,
+        'appointment_number' => '3',
+        'appointment_order' => 3,
+        'appointment_type' => 'New',
+        'status' => 'pending',
+        'on_hold' => false,
+        'amount' => 300,
+        'payment_type' => 'Cash',
+        'medicine_status' => false,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.appointments', [
+            'date_preset' => 'today',
+            'status' => 'complete',
+            'session' => 'Morning',
+            'appointment_type' => 'New',
+            'payment_type' => 'UPI',
+            'medicine_status' => 'dispatched',
+        ]))
+        ->assertSuccessful()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('admin/Appointments')
+            ->has('appointments.data', 1)
+            ->where('appointments.data.0.patientName', 'Aarav Mehta')
+            ->where('appointments.data.0.paymentType', 'UPI')
+            ->where('appointments.data.0.medicineStatus', true)
+            ->where('appointments.data.0.diagnosis', 'Migraine')
+            ->where('summary.total', 1)
+            ->where('summary.complete', 1)
+            ->where('summary.revenue', 500));
+
+    $this->actingAs($user)
+        ->get(route('admin.appointments', [
+            'date_from' => '2026-01-01',
+            'date_to' => '2026-01-31',
+        ]))
+        ->assertSuccessful()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('admin/Appointments')
+            ->has('appointments.data', 1)
+            ->where('appointments.data.0.patientName', 'Suresh Iyer')
+            ->where('filters.date_from', '2026-01-01')
+            ->where('filters.date_to', '2026-01-31'));
+
+    $this->actingAs($user)
+        ->get(route('admin.appointments', [
+            'status' => 'on_hold',
+            'payment_type' => 'unpaid',
+            'medicine_status' => 'pending',
+        ]))
+        ->assertSuccessful()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('admin/Appointments')
+            ->has('appointments.data', 1)
+            ->where('appointments.data.0.patientName', 'Nisha Kapoor')
+            ->where('summary.on_hold', 1));
+});
+
 test('authenticated staff can search patients by partial phone number, last name, or any mix of name and phone', function (string $searchQuery, string $expectedName) {
     $user = User::factory()->create();
 

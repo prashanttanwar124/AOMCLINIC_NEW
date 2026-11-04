@@ -26,4 +26,16 @@ class ClinicSetting extends Model
     {
         return static::query()->latest('id')->first() ?? new self;
     }
+
+    /**
+     * Get the root-relative public URL for the clinic logo.
+     */
+    public function logoUrl(): ?string
+    {
+        if (! $this->logo_path) {
+            return null;
+        }
+
+        return '/storage/'.ltrim($this->logo_path, '/');
+    }
 }

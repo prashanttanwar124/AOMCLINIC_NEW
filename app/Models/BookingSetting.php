@@ -78,19 +78,33 @@ class BookingSetting extends Model
      */
     public function isClosedOn(CarbonInterface $date, string $session): bool
     {
-        $normalizedSession = Str::lower($session);
+        $normalizedSession = match (Str::lower(trim($session))) {
+            'm', 'morning' => 'morning',
+            'e', 'evening' => 'evening',
+            default => Str::lower(trim($session)),
+        };
 
-        if (is_array($this->closed_days) && in_array($date->dayOfWeek, $this->closed_days)) {
-            return true;
+        if (is_array($this->closed_days)) {
+            $closedDays = array_map('intval', $this->closed_days);
+            if (in_array((int) $date->dayOfWeek, $closedDays, true)) {
+                return true;
+            }
         }
 
+        $dateStr = $date->toDateString();
+
         foreach ($this->clinic_closures ?? [] as $closure) {
-            if (Arr::get($closure, 'date') !== $date->toDateString()) {
+            $closureDate = substr(trim((string) Arr::get($closure, 'date', '')), 0, 10);
+            if ($closureDate !== $dateStr) {
                 continue;
             }
 
             $slots = collect(Arr::get($closure, 'slot', []))
-                ->map(fn (mixed $slot): string => Str::lower((string) $slot));
+                ->map(fn (mixed $slot): string => match (Str::lower(trim((string) $slot))) {
+                    'm', 'morning' => 'morning',
+                    'e', 'evening' => 'evening',
+                    default => Str::lower(trim((string) $slot)),
+                });
 
             if ($slots->contains($normalizedSession)) {
                 return true;

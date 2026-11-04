@@ -9,6 +9,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,22 +24,53 @@ class PatientController extends Controller
         $search = $request->query('query');
 
         $patients = Patient::query()
+            ->with(['parent', 'children'])
             ->search($search)
             ->orderBy('name')
-            ->limit(20)
+            ->limit(25)
             ->get();
 
         return response()->json(
-            $patients->map(fn (Patient $patient) => [
-                'id' => $patient->id,
-                'name' => $patient->name,
-                'email' => $patient->email,
-                'phone' => $patient->phone ? "+{$patient->country_calling_code} {$patient->phone}" : null,
-                'address' => $patient->address,
-                'parent_id' => $patient->parent_id,
-                'has_dependents' => $patient->children()->exists(),
-                'label' => $patient->name.' (#'.$patient->id.')'.($patient->phone ? " - +{$patient->country_calling_code}{$patient->phone}" : ($patient->email ? " - {$patient->email}" : '')),
-            ])
+            $patients->map(function (Patient $patient): array {
+                $effectivePhone = $patient->phone
+                    ? "+{$patient->country_calling_code} {$patient->phone}"
+                    : ($patient->parent?->phone ? "+{$patient->parent->country_calling_code} {$patient->parent->phone}" : null);
+
+                $rawAddress = $patient->address ?: $patient->parent?->address;
+                $rawCity = $patient->city ?: $patient->parent?->city;
+                $deliveryAddress = collect([$rawAddress, $rawCity])
+                    ->filter(fn ($v) => filled($v))
+                    ->unique()
+                    ->implode(', ');
+
+                $compactPhone = $patient->phone
+                    ? "+{$patient->country_calling_code}{$patient->phone}"
+                    : ($patient->parent?->phone ? "+{$patient->parent->country_calling_code}{$patient->parent->phone}" : null);
+
+                $dependentSuffix = $patient->parent ? " [Dependent of {$patient->parent->name}]" : '';
+
+                return [
+                    'id' => $patient->id,
+                    'name' => $patient->name,
+                    'email' => $patient->email ?: $patient->parent?->email,
+                    'phone' => $effectivePhone,
+                    'address' => $deliveryAddress !== '' ? $deliveryAddress : $rawAddress,
+                    'city' => $rawCity,
+                    'delivery_address' => $deliveryAddress !== '' ? $deliveryAddress : $rawAddress,
+                    'parent_id' => $patient->parent_id,
+                    'parent_name' => $patient->parent?->name,
+                    'has_dependents' => $patient->children->isNotEmpty(),
+                    'children' => $patient->children->map(fn (Patient $child) => [
+                        'id' => $child->id,
+                        'name' => $child->name,
+                        'phone' => $child->phone ? "+{$child->country_calling_code} {$child->phone}" : $effectivePhone,
+                        'address' => collect([$child->address ?: $rawAddress, $child->city ?: $rawCity])->filter(fn ($v) => filled($v))->unique()->implode(', ') ?: $rawAddress,
+                        'parent_id' => $patient->id,
+                        'parent_name' => $patient->name,
+                    ])->values()->all(),
+                    'label' => $patient->name.' (#'.$patient->id.')'.$dependentSuffix.($compactPhone ? " - {$compactPhone}" : ($patient->email ? " - {$patient->email}" : '')),
+                ];
+            })
         );
     }
 
@@ -94,6 +127,8 @@ class PatientController extends Controller
                 'amount' => $parcel->amount,
                 'medicines' => $parcel->medicines ?? [],
                 'address' => $parcel->address,
+                'complaints' => $parcel->complaints,
+                'days_prescription' => $parcel->days_prescription,
                 'notes' => $parcel->notes,
                 'delivered_date' => $parcel->delivered_date?->toDateString(),
                 'instructions_given' => (bool) $parcel->instructions_given,
@@ -123,13 +158,22 @@ class PatientController extends Controller
     {
         $id = $request->query('id');
         $search = $request->query('search');
+        $filter = $request->query('filter', 'all');
 
         $query = Patient::query();
 
-        if (filled($id)) {
-            $query->where('id', $id);
-        } elseif (filled($search)) {
+        if ($filter === 'dependents') {
+            $query->whereNotNull('parent_id');
+        } elseif ($filter === 'account_holders') {
+            $query->whereNull('parent_id');
+        }
+
+        if (filled($search)) {
             $query->search($search);
+        }
+
+        if (filled($id)) {
+            $query->orderByRaw('CASE WHEN id = ? THEN 0 ELSE 1 END', [(int) $id]);
         }
 
         $paginated = $query->with(['appointments', 'children', 'parent'])
@@ -141,9 +185,11 @@ class PatientController extends Controller
             $age = $patient->date_of_birth?->age;
             $phone = $patient->phone
                 ? trim("{$patient->country_calling_code} {$patient->phone}")
-                : null;
+                : ($patient->parent?->phone ? trim("{$patient->parent->country_calling_code} {$patient->parent->phone}") : null);
+            $effectiveAddress = $patient->address ?: $patient->parent?->address;
+            $effectiveCity = $patient->city ?: $patient->parent?->city;
 
-            $appointments = $patient->appointments->sortBy('appointment_date')->values()->map(function (Appointment $appointment) use ($patient, $age, $phone): array {
+            $appointments = $patient->appointments->sortBy('appointment_date')->values()->map(function (Appointment $appointment) use ($patient, $age, $phone, $effectiveAddress, $effectiveCity): array {
                 $session = Appointment::sessionLabelForSlot($appointment->slot);
                 $queueStatus = match (true) {
                     Str::lower((string) $appointment->status) === 'complete' => 'complete',
@@ -166,9 +212,9 @@ class PatientController extends Controller
                     'age' => $age,
                     'phone' => $phone ? "+{$phone}" : null,
                     'email' => $patient->email,
-                    'city' => $patient->city,
+                    'city' => $effectiveCity,
                     'dateOfBirth' => $patient->date_of_birth?->toDateString(),
-                    'address' => $patient->address,
+                    'address' => $effectiveAddress,
                     'session' => $session,
                     'onHold' => $appointment->on_hold,
                     'holdOrder' => $appointment->hold_order,
@@ -268,17 +314,25 @@ class PatientController extends Controller
                 'name' => $patient->name,
                 'email' => $patient->email,
                 'phone' => $phone ? "+{$phone}" : null,
+                'rawPhone' => $patient->phone ?: $patient->parent?->phone,
+                'countryCode' => $patient->country_code ?? $patient->parent?->country_code ?? 'IN',
+                'countryCallingCode' => $patient->country_calling_code ?? $patient->parent?->country_calling_code ?? '91',
                 'gender' => $patient->gender ? str($patient->gender)->headline()->toString() : null,
+                'genderValue' => $patient->gender,
                 'age' => $age,
-                'city' => $patient->city,
+                'city' => $effectiveCity,
                 'dateOfBirth' => $patient->date_of_birth?->toDateString(),
-                'address' => $patient->address,
+                'address' => $effectiveAddress,
                 'appointments' => $appointments,
                 'children' => $patient->children->map(fn (Patient $child): array => [
                     'id' => $child->id,
                     'name' => $child->name,
                     'email' => $child->email,
-                    'phone' => $child->phone ? trim("+{$child->country_calling_code} {$child->phone}") : null,
+                    'phone' => $child->phone
+                        ? trim("+{$child->country_calling_code} {$child->phone}")
+                        : ($phone ? "+{$phone}" : null),
+                    'gender' => $child->gender ? str($child->gender)->headline()->toString() : null,
+                    'age' => $child->date_of_birth?->age,
                 ])->all(),
                 'parent' => $patient->parent ? [
                     'id' => $patient->parent->id,
@@ -294,7 +348,145 @@ class PatientController extends Controller
             'filters' => [
                 'id' => $id,
                 'search' => $search,
+                'filter' => $filter,
             ],
+        ]);
+    }
+
+    /**
+     * Store a newly created patient from the admin registry.
+     */
+    public function store(Request $request): RedirectResponse|JsonResponse
+    {
+        $isDependent = filled($request->input('parent_id'));
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['nullable', 'string', 'email', 'max:255', Rule::unique(Patient::class, 'email')],
+            'phone' => [$isDependent ? 'nullable' : 'required', 'string', 'max:30'],
+            'country_code' => ['nullable', 'string', 'size:2'],
+            'country_calling_code' => ['nullable', 'string', 'max:6'],
+            'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
+            'gender' => ['nullable', 'string', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
+            'city' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:1000'],
+            'password' => ['nullable', 'string', Password::default()],
+            'parent_id' => ['nullable', 'integer', 'exists:patients,id'],
+        ]);
+
+        $parent = filled($validated['parent_id'] ?? null)
+            ? Patient::find((int) $validated['parent_id'])
+            : null;
+
+        $callingCode = ltrim((string) ($validated['country_calling_code'] ?? $parent?->country_calling_code ?? '91'), '+') ?: '91';
+        $rawPhone = trim((string) ($validated['phone'] ?? ''));
+
+        if ($rawPhone !== '' && str_starts_with($rawPhone, "+{$callingCode}")) {
+            $rawPhone = trim(substr($rawPhone, strlen("+{$callingCode}")));
+        }
+
+        $payload = [
+            'name' => $validated['name'],
+            'email' => filled($validated['email'] ?? null) ? $validated['email'] : null,
+            'phone' => $rawPhone !== '' ? $rawPhone : null,
+            'country_code' => strtoupper((string) ($validated['country_code'] ?? $parent?->country_code ?? 'IN')) ?: 'IN',
+            'country_calling_code' => $callingCode,
+            'date_of_birth' => filled($validated['date_of_birth'] ?? null) ? $validated['date_of_birth'] : null,
+            'gender' => filled($validated['gender'] ?? null) ? $validated['gender'] : null,
+            'city' => filled($validated['city'] ?? null) ? $validated['city'] : $parent?->city,
+            'address' => filled($validated['address'] ?? null) ? $validated['address'] : $parent?->address,
+            'parent_id' => $parent?->id,
+        ];
+
+        if (filled($validated['password'] ?? null)) {
+            $payload['password'] = $validated['password'];
+        }
+
+        $patient = Patient::create($payload);
+
+        if ($request->expectsJson()) {
+            $effectivePhone = $patient->phone
+                ? "+{$patient->country_calling_code} {$patient->phone}"
+                : ($parent?->phone ? "+{$parent->country_calling_code} {$parent->phone}" : null);
+
+            $deliveryAddress = collect([$patient->address, $patient->city])
+                ->filter(fn ($v) => filled($v))
+                ->unique()
+                ->implode(', ');
+
+            return response()->json([
+                'patient' => [
+                    'id' => $patient->id,
+                    'name' => $patient->name,
+                    'email' => $patient->email,
+                    'phone' => $effectivePhone,
+                    'address' => $deliveryAddress !== '' ? $deliveryAddress : $patient->address,
+                    'city' => $patient->city,
+                    'delivery_address' => $deliveryAddress !== '' ? $deliveryAddress : $patient->address,
+                    'parent_id' => $patient->parent_id,
+                    'parent_name' => $parent?->name,
+                    'has_dependents' => false,
+                    'children' => [],
+                    'label' => $patient->name.' (#'.$patient->id.')'.($effectivePhone ? " - {$effectivePhone}" : ''),
+                ],
+                'message' => "Patient {$patient->name} added successfully.",
+            ]);
+        }
+
+        return to_route('admin.patients', ['id' => $patient->id])->with('toast', [
+            'type' => 'success',
+            'message' => "Patient {$patient->name} added successfully.",
+        ]);
+    }
+
+    /**
+     * Update an existing patient's profile from the admin registry.
+     */
+    public function update(Request $request, Patient $patient): RedirectResponse
+    {
+        $isDependent = $patient->parent_id !== null;
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['nullable', 'string', 'email', 'max:255', Rule::unique(Patient::class, 'email')->ignore($patient->id)],
+            'phone' => [$isDependent ? 'nullable' : 'required', 'string', 'max:30'],
+            'country_code' => ['nullable', 'string', 'size:2'],
+            'country_calling_code' => ['nullable', 'string', 'max:6'],
+            'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
+            'gender' => ['nullable', 'string', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
+            'city' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:1000'],
+            'password' => ['nullable', 'string', Password::default()],
+        ]);
+
+        $callingCode = ltrim((string) ($validated['country_calling_code'] ?? $patient->country_calling_code ?? '91'), '+') ?: '91';
+        $rawPhone = trim((string) ($validated['phone'] ?? ''));
+
+        if ($rawPhone !== '' && str_starts_with($rawPhone, "+{$callingCode}")) {
+            $rawPhone = trim(substr($rawPhone, strlen("+{$callingCode}")));
+        }
+
+        $payload = [
+            'name' => $validated['name'],
+            'email' => filled($validated['email'] ?? null) ? $validated['email'] : null,
+            'phone' => $rawPhone !== '' ? $rawPhone : null,
+            'country_code' => strtoupper((string) ($validated['country_code'] ?? $patient->country_code ?? 'IN')) ?: 'IN',
+            'country_calling_code' => $callingCode,
+            'date_of_birth' => filled($validated['date_of_birth'] ?? null) ? $validated['date_of_birth'] : null,
+            'gender' => filled($validated['gender'] ?? null) ? $validated['gender'] : null,
+            'city' => filled($validated['city'] ?? null) ? $validated['city'] : null,
+            'address' => filled($validated['address'] ?? null) ? $validated['address'] : null,
+        ];
+
+        if (filled($validated['password'] ?? null)) {
+            $payload['password'] = $validated['password'];
+        }
+
+        $patient->update($payload);
+
+        return back()->with('toast', [
+            'type' => 'success',
+            'message' => "Patient {$patient->name} updated successfully.",
         ]);
     }
 

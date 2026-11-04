@@ -9,30 +9,25 @@ test('patient login screen can be rendered', function () {
     $response->assertOk();
 });
 
-test('patient registration screen can be rendered', function () {
-    $response = $this->get(route('patient.register'));
-
-    $response->assertOk();
-});
-
-test('patients can register using their own table and guard', function () {
-    $response = $this->post(route('patient.register.store'), [
+test('patient registration routes are disabled', function () {
+    $this->get('/patient/register')->assertNotFound();
+    $this->post('/patient/register', [
         'name' => 'Patient User',
         'email' => 'patient@example.com',
         'phone' => '9876543210',
-        'date_of_birth' => '1990-05-20',
-        'gender' => 'female',
-        'address' => '221B Baker Street',
-        'city' => 'Mumbai',
         'password' => 'password',
         'password_confirmation' => 'password',
-    ]);
+    ])->assertNotFound();
+});
 
-    $patient = Patient::query()->where('email', 'patient@example.com')->first();
-
-    expect($patient)->not->toBeNull();
-    $this->assertAuthenticatedAs($patient, 'patient');
-    $response->assertRedirect(route('patient.dashboard', absolute: false));
+test('staff registration routes are disabled', function () {
+    $this->get('/register')->assertNotFound();
+    $this->post('/register', [
+        'name' => 'Staff User',
+        'email' => 'staff@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ])->assertNotFound();
 });
 
 test('patients can authenticate using the patient login screen', function () {

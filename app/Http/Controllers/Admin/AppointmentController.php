@@ -7,7 +7,6 @@ use App\Models\Appointment;
 use App\Models\ClinicSetting;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -20,6 +19,27 @@ class AppointmentController extends Controller
     public function index(Request $request): Response
     {
         $search = $request->query('search');
+        $status = $request->query('status');
+        $session = $request->query('session');
+        $appointmentType = $request->query('appointment_type');
+        $paymentType = $request->query('payment_type');
+        $medicineStatus = $request->query('medicine_status');
+        $datePreset = $request->query('date_preset');
+        $dateFrom = $request->query('date_from');
+        $dateTo = $request->query('date_to');
+
+        if (filled($datePreset) && ! filled($dateFrom) && ! filled($dateTo)) {
+            $today = today();
+            [$dateFrom, $dateTo] = match ($datePreset) {
+                'today' => [$today->toDateString(), $today->toDateString()],
+                'yesterday' => [$today->copy()->subDay()->toDateString(), $today->copy()->subDay()->toDateString()],
+                'last_7_days' => [$today->copy()->subDays(6)->toDateString(), $today->toDateString()],
+                'this_week' => [$today->copy()->startOfWeek()->toDateString(), $today->copy()->endOfWeek()->toDateString()],
+                'this_month' => [$today->copy()->startOfMonth()->toDateString(), $today->copy()->endOfMonth()->toDateString()],
+                'last_30_days' => [$today->copy()->subDays(29)->toDateString(), $today->toDateString()],
+                default => [null, null],
+            };
+        }
 
         $allowedPerPage = [15, 25, 50, 100];
         $perPage = (int) $request->query('perPage', 15);
@@ -27,22 +47,121 @@ class AppointmentController extends Controller
             $perPage = 15;
         }
 
-        $query = Appointment::query();
+        $baseQuery = Appointment::query();
 
         if (filled($search)) {
-            $query->where(function ($q) use ($search) {
+            $baseQuery->where(function ($q) use ($search) {
                 $q->whereHas('patient', function ($pq) use ($search) {
                     $pq->search($search);
                 })
-                    ->orWhere('appointment_number', 'like', "%{$search}%");
+                    ->orWhere('appointment_number', 'like', "%{$search}%")
+                    ->orWhere('diagnosis', 'like', "%{$search}%")
+                    ->orWhere('chief_complaint', 'like', "%{$search}%")
+                    ->orWhere('purpose_of_appointment', 'like', "%{$search}%");
             });
         }
+
+        if (filled($dateFrom)) {
+            $baseQuery->whereDate('appointment_date', '>=', $dateFrom);
+        }
+
+        if (filled($dateTo)) {
+            $baseQuery->whereDate('appointment_date', '<=', $dateTo);
+        }
+
+        if (filled($session)) {
+            $slot = in_array(strtoupper($session), ['M', 'E'], true)
+                ? strtoupper($session)
+                : Appointment::slotForSession($session);
+            $baseQuery->where('slot', $slot);
+        }
+
+        if (filled($appointmentType)) {
+            $baseQuery->where('appointment_type', $appointmentType);
+        }
+
+        if (filled($paymentType)) {
+            if ($paymentType === 'unpaid') {
+                $baseQuery->where(function ($q) {
+                    $q->whereNull('amount')->orWhere('amount', '<=', 0);
+                });
+            } else {
+                $baseQuery->where('payment_type', $paymentType);
+            }
+        }
+
+        if (filled($medicineStatus)) {
+            if ($medicineStatus === 'dispatched') {
+                $baseQuery->where('medicine_status', true);
+            } elseif ($medicineStatus === 'pending') {
+                $baseQuery->where('medicine_status', false);
+            }
+        }
+
+        // Compute status summary across the filtered dataset (before applying status filter)
+        $summary = [
+            'total' => (clone $baseQuery)->count(),
+            'today' => Appointment::whereDate('appointment_date', today())->count(),
+            'pending' => (clone $baseQuery)
+                ->where('on_hold', false)
+                ->whereRaw('LOWER(COALESCE(status, \'\')) != ?', ['complete'])
+                ->count(),
+            'on_hold' => (clone $baseQuery)
+                ->where('on_hold', true)
+                ->whereRaw('LOWER(COALESCE(status, \'\')) != ?', ['complete'])
+                ->count(),
+            'complete' => (clone $baseQuery)
+                ->whereRaw('LOWER(COALESCE(status, \'\')) = ?', ['complete'])
+                ->count(),
+            'revenue' => (float) (clone $baseQuery)->sum('amount'),
+        ];
+
+        $query = clone $baseQuery;
+
+        if (filled($status)) {
+            match ($status) {
+                'complete' => $query->whereRaw('LOWER(COALESCE(status, \'\')) = ?', ['complete']),
+                'on_hold' => $query->where('on_hold', true)->whereRaw('LOWER(COALESCE(status, \'\')) != ?', ['complete']),
+                'pending' => $query->where('on_hold', false)->whereRaw('LOWER(COALESCE(status, \'\')) != ?', ['complete']),
+                default => null,
+            };
+        }
+
+        $dateBreakdown = (clone $query)
+            ->selectRaw("
+                DATE(appointment_date) as date_val,
+                COUNT(*) as total,
+                SUM(CASE WHEN slot = 'M' THEN 1 ELSE 0 END) as morning,
+                SUM(CASE WHEN slot = 'E' THEN 1 ELSE 0 END) as evening,
+                SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'complete' THEN 1 ELSE 0 END) as complete,
+                SUM(CASE WHEN on_hold = 1 AND LOWER(COALESCE(status, '')) != 'complete' THEN 1 ELSE 0 END) as on_hold,
+                SUM(CASE WHEN (on_hold = 0 OR on_hold IS NULL) AND LOWER(COALESCE(status, '')) != 'complete' THEN 1 ELSE 0 END) as pending,
+                COALESCE(SUM(amount), 0) as revenue
+            ")
+            ->groupByRaw('DATE(appointment_date)')
+            ->orderByDesc('date_val')
+            ->limit(14)
+            ->get()
+            ->map(fn ($row) => [
+                'date' => (string) $row->date_val,
+                'total' => (int) $row->total,
+                'morning' => (int) $row->morning,
+                'evening' => (int) $row->evening,
+                'complete' => (int) $row->complete,
+                'on_hold' => (int) $row->on_hold,
+                'pending' => (int) $row->pending,
+                'revenue' => (float) $row->revenue,
+            ])
+            ->values()
+            ->all();
 
         $paginated = $query->with([
             'patient:id,name,email,phone,country_calling_code,date_of_birth,gender,city,address',
             'patient.appointments',
         ])
             ->orderByDesc('appointment_date')
+            ->orderByRaw("CASE slot WHEN 'M' THEN 0 WHEN 'E' THEN 1 ELSE 2 END")
+            ->orderBy('appointment_order')
             ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();
@@ -117,6 +236,10 @@ class AppointmentController extends Controller
                 'appointmentSequence' => (int) $appointment->appointment_order,
                 'appointmentType' => $appointment->appointment_type,
                 'amount' => $appointment->amount,
+                'paymentType' => $appointment->payment_type,
+                'medicineStatus' => (bool) $appointment->medicine_status,
+                'diagnosis' => $appointment->diagnosis,
+                'chiefComplaint' => $appointment->chief_complaint,
                 'patientName' => $patient?->name ?? 'Walk-in patient',
                 'patientNumber' => null,
                 'patientId' => $patient?->id,
@@ -207,8 +330,18 @@ class AppointmentController extends Controller
 
         return Inertia::render('admin/Appointments', [
             'appointments' => $paginated,
+            'summary' => $summary,
+            'dateBreakdown' => $dateBreakdown,
             'filters' => [
                 'search' => $search,
+                'status' => $status,
+                'session' => $session,
+                'appointment_type' => $appointmentType,
+                'payment_type' => $paymentType,
+                'medicine_status' => $medicineStatus,
+                'date_preset' => $datePreset,
+                'date_from' => $request->query('date_from'),
+                'date_to' => $request->query('date_to'),
                 'perPage' => $perPage,
             ],
             'perPageOptions' => $allowedPerPage,
@@ -228,7 +361,7 @@ class AppointmentController extends Controller
         $appointment->load(['patient', 'vital']);
         $clinic = ClinicSetting::current();
 
-        $logoUrl = $clinic->logo_path ? Storage::disk('public')->url($clinic->logo_path) : null;
+        $logoUrl = $clinic->logoUrl();
 
         return Inertia::render('admin/appointments/Receipt', [
             'appointment' => [

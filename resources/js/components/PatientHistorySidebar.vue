@@ -34,6 +34,8 @@ type TimelineItem = {
         spo2?: string | number | null;
     } | null;
     address?: string | null;
+    complaints?: string | null;
+    days_prescription?: number | null;
     notes?: string | null;
     delivered_date?: string | null;
     instructions_given?: boolean;
@@ -302,6 +304,14 @@ function getParcelSeverity(status: string): 'success' | 'info' | 'warn' | 'dange
 
                                 <!-- Parcel detail items -->
                                 <template v-else-if="item.type === 'parcel'">
+                                    <div v-if="item.complaints" class="detail-field">
+                                        <span class="detail-label">Patient Complaints:</span>
+                                        <p class="detail-val complaint-text">{{ item.complaints }}</p>
+                                    </div>
+                                    <div v-if="item.days_prescription" class="detail-field">
+                                        <span class="detail-label">Prescription Duration:</span>
+                                        <p class="detail-val text-xs font-semibold">{{ item.days_prescription }} days</p>
+                                    </div>
                                     <div v-if="item.address" class="detail-field">
                                         <span class="detail-label">Delivery Address:</span>
                                         <p class="detail-val text-xs text-secondary address-text">{{ item.address }}</p>

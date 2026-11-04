@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
+import ConfirmDialog from 'primevue/confirmdialog';
 import Toast from 'primevue/toast';
 import { computed, ref } from 'vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
@@ -398,6 +399,7 @@ const closeMobileMenu = (): void => {
 
         <div class="layout-mask" @click="closeMobileMenu"></div>
 
+        <ConfirmDialog class="admin-confirm-dialog" />
         <Toast position="top-right" />
         <FlashToastBridge />
     </div>

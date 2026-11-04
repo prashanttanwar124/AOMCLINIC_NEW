@@ -19,4 +19,12 @@ class Category extends Model
     {
         return $this->hasMany(Medicine::class);
     }
+
+    /**
+     * Get the medicine stock variations associated with this category.
+     */
+    public function stocks(): HasMany
+    {
+        return $this->hasMany(MedicineStock::class);
+    }
 }

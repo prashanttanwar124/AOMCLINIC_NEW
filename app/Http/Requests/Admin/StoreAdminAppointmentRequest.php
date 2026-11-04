@@ -3,8 +3,8 @@
 namespace App\Http\Requests\Admin;
 
 use App\Models\Appointment;
-use App\Models\BookingSetting;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -23,6 +23,9 @@ class StoreAdminAppointmentRequest extends FormRequest
             'appointment_number' => $this->filled('appointment_number')
                 ? (int) $this->input('appointment_number')
                 : null,
+            'second_appointment_number' => $this->filled('second_appointment_number')
+                ? (int) $this->input('second_appointment_number')
+                : null,
             'reason_for_visit' => $this->filled('reason_for_visit')
                 ? trim((string) $this->input('reason_for_visit'))
                 : null,
@@ -40,7 +43,7 @@ class StoreAdminAppointmentRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -49,6 +52,7 @@ class StoreAdminAppointmentRequest extends FormRequest
             'appointment_date' => ['required', 'date', 'after_or_equal:today'],
             'appointment_session' => ['required', 'string', Rule::in(['morning', 'evening'])],
             'appointment_number' => ['required', 'integer', 'min:1'],
+            'second_appointment_number' => ['nullable', 'integer', 'min:1', 'different:appointment_number'],
             'appointment_type' => ['required', 'string', Rule::in(['new', 'follow_up'])],
             'reason_for_visit' => ['nullable', 'string'],
         ];
@@ -67,7 +71,6 @@ class StoreAdminAppointmentRequest extends FormRequest
                     return;
                 }
 
-                $patientId = (int) $this->input('patient_id');
                 $appointmentDate = CarbonImmutable::parse((string) $this->input('appointment_date'));
                 $appointmentSession = (string) $this->input('appointment_session');
 
@@ -75,6 +78,9 @@ class StoreAdminAppointmentRequest extends FormRequest
                     ->whereDate('appointment_date', $appointmentDate)
                     ->where('slot', Appointment::slotForSession($appointmentSession));
                 $selectedToken = (int) $this->input('appointment_number');
+                $secondToken = $this->filled('second_appointment_number')
+                    ? (int) $this->input('second_appointment_number')
+                    : null;
 
                 if ((clone $appointmentsForSlot)
                     ->where('appointment_order', $selectedToken)
@@ -85,12 +91,12 @@ class StoreAdminAppointmentRequest extends FormRequest
                     );
                 }
 
-                if ((clone $appointmentsForSlot)
-                    ->where('patient_id', $patientId)
+                if ($secondToken !== null && (clone $appointmentsForSlot)
+                    ->where('appointment_order', $secondToken)
                     ->exists()) {
                     $validator->errors()->add(
-                        'appointment_session',
-                        'This patient already has a booking for this date and session.'
+                        'second_appointment_number',
+                        'Selected second token is already taken.'
                     );
                 }
             },

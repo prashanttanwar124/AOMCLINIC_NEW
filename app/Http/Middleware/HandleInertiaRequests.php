@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\User;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -38,6 +39,10 @@ class HandleInertiaRequests extends Middleware
     {
         $staffUser = $request->user();
         $patientUser = $request->user('patient');
+
+        if ($request->hasSession() && $request->session()->has('toast')) {
+            Inertia::flash('toast', $request->session()->get('toast'));
+        }
 
         return [
             ...parent::share($request),

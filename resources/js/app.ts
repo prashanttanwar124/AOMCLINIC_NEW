@@ -2,7 +2,9 @@ import { createInertiaApp, router } from '@inertiajs/vue3';
 import { definePreset } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
 import PrimeVue from 'primevue/config';
+import ConfirmationService from 'primevue/confirmationservice';
 import ToastService from 'primevue/toastservice';
+import Tooltip from 'primevue/tooltip';
 import { initializeTheme } from '@/composables/useAppearance';
 import AdminLayout from '@/layouts/admin/AppLayout.vue';
 import AdminSettingsLayout from '@/layouts/admin/settings/Layout.vue';
@@ -97,6 +99,8 @@ createInertiaApp({
         });
 
         app.use(ToastService);
+        app.use(ConfirmationService);
+        app.directive('tooltip', Tooltip);
     },
 });
 

@@ -4,13 +4,16 @@ import { useEchoPublic } from '@laravel/echo-vue';
 import AutoComplete from 'primevue/autocomplete';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
+import Dialog from 'primevue/dialog';
+import InputText from 'primevue/inputtext';
 import Message from 'primevue/message';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
+import { useToast } from 'primevue/usetoast';
 import { computed, reactive, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
-import http from '@/lib/http';
+import http, { extractErrors } from '@/lib/http';
 import { dashboard, booking } from '@/routes';
 import PatientController from '@/actions/App/Http/Controllers/Admin/PatientController';
 import AppointmentBookingController from '@/actions/App/Http/Controllers/Admin/AppointmentBookingController';
@@ -56,8 +59,10 @@ defineOptions({
     },
 });
 
+const toast = useToast();
 const selectedPatient = ref<any>(null);
 const patientSuggestions = ref<any[]>([]);
+const isDoubleBooking = ref(false);
 
 useEchoPublic('live-queue', 'QueueUpdated', () => {
     router.reload({
@@ -70,6 +75,7 @@ const form = useForm({
     appointment_date: props.dateOptions.find((option) => !option.disabled)?.value ?? props.dateOptions[0]?.value ?? '',
     appointment_session: '',
     appointment_number: null as number | null,
+    second_appointment_number: null as number | null,
     appointment_type: props.appointmentTypes[0]?.value ?? 'new',
     reason_for_visit: '',
 });
@@ -123,23 +129,38 @@ const availableTokens = computed<number[]>(() => {
 });
 
 const selectedTokenLabel = computed(() => {
-    return form.appointment_number
-        ? `Token ${form.appointment_number}`
-        : 'Not selected';
+    if (!form.appointment_number) {
+        return 'Not selected';
+    }
+
+    if (isDoubleBooking.value && form.second_appointment_number) {
+        return `Tokens ${form.appointment_number} & ${form.second_appointment_number}`;
+    }
+
+    return `Token ${form.appointment_number}`;
 });
 
 watch(
-    availableTokens,
-    (tokens) => {
-        const activeToken = tokens.find(
-            (token) => token === form.appointment_number,
-        );
+    [availableTokens, isDoubleBooking],
+    ([tokens, doubleMode]) => {
+        if (!tokens.includes(form.appointment_number ?? -1)) {
+            form.appointment_number = tokens[0] ?? null;
+        }
 
-        if (activeToken) {
+        if (!doubleMode) {
+            form.second_appointment_number = null;
+
             return;
         }
 
-        form.appointment_number = tokens[0] ?? null;
+        if (
+            !form.second_appointment_number ||
+            form.second_appointment_number === form.appointment_number ||
+            !tokens.includes(form.second_appointment_number)
+        ) {
+            form.second_appointment_number =
+                tokens.find((t) => t !== form.appointment_number) ?? null;
+        }
     },
     { immediate: true },
 );
@@ -163,6 +184,70 @@ const searchPatients = async (event: { query: string }) => {
     }
 };
 
+const selectDependentForBooking = (child: any) => {
+    selectedPatient.value = {
+        ...child,
+        label: `${child.name} (#${child.id}) [Dependent of ${selectedPatient.value?.name ?? 'Parent'}]`,
+        children: [],
+    };
+};
+
+// Quick Create Patient Modal
+const createPatientDialogVisible = ref(false);
+const createPatientSubmitting = ref(false);
+const createPatientErrors = ref<Record<string, string>>({});
+const newPatientForm = reactive({
+    name: '',
+    phone: '',
+    gender: '' as string | null,
+    date_of_birth: '',
+    city: '',
+    address: '',
+});
+
+const genderOptions = [
+    { label: 'Male', value: 'male' },
+    { label: 'Female', value: 'female' },
+    { label: 'Other', value: 'other' },
+];
+
+const openCreatePatientModal = (): void => {
+    newPatientForm.name = '';
+    newPatientForm.phone = '';
+    newPatientForm.gender = null;
+    newPatientForm.date_of_birth = '';
+    newPatientForm.city = '';
+    newPatientForm.address = '';
+    createPatientErrors.value = {};
+    createPatientDialogVisible.value = true;
+};
+
+const submitNewPatient = async (): Promise<void> => {
+    createPatientSubmitting.value = true;
+    createPatientErrors.value = {};
+
+    try {
+        const { data } = await http.post(PatientController.store().url, {
+            ...newPatientForm,
+        });
+        if (data?.patient) {
+            selectedPatient.value = data.patient;
+            form.patient_id = data.patient.id;
+        }
+        createPatientDialogVisible.value = false;
+        toast.add({
+            severity: 'success',
+            summary: 'Patient Added',
+            detail: data?.message ?? 'New patient created and selected for booking.',
+            life: 3500,
+        });
+    } catch (err) {
+        createPatientErrors.value = extractErrors(err);
+    } finally {
+        createPatientSubmitting.value = false;
+    }
+};
+
 const chooseSession = (session: SessionOption): void => {
     if (session.disabled) {
         return;
@@ -172,10 +257,39 @@ const chooseSession = (session: SessionOption): void => {
 };
 
 const chooseToken = (token: number): void => {
-    form.appointment_number = token;
+    if (!isDoubleBooking.value) {
+        form.appointment_number = token;
+
+        return;
+    }
+
+    if (form.appointment_number === token) {
+        if (form.second_appointment_number) {
+            form.appointment_number = form.second_appointment_number;
+            form.second_appointment_number = null;
+        }
+
+        return;
+    }
+
+    if (form.second_appointment_number === token) {
+        form.second_appointment_number = null;
+
+        return;
+    }
+
+    if (!form.appointment_number) {
+        form.appointment_number = token;
+    } else {
+        form.second_appointment_number = token;
+    }
 };
 
 const submit = (): void => {
+    if (!isDoubleBooking.value) {
+        form.second_appointment_number = null;
+    }
+
     form.post(AppointmentBookingController.store().url, {
         preserveScroll: true,
     });
@@ -231,9 +345,18 @@ const submit = (): void => {
                                 <div>
                                     <p class="booking-section__title">Select Patient</p>
                                     <p class="booking-section__hint">
-                                        Type to search existing patient records by name, email, phone, or ID.
+                                        Type to search existing patients or dependents by name, phone, email, or ID.
                                     </p>
                                 </div>
+                                <Button
+                                    type="button"
+                                    label="New Patient"
+                                    icon="pi pi-user-plus"
+                                    size="small"
+                                    severity="secondary"
+                                    outlined
+                                    @click="openCreatePatientModal"
+                                />
                             </div>
 
                             <div class="field">
@@ -241,7 +364,7 @@ const submit = (): void => {
                                     v-model="selectedPatient"
                                     :suggestions="patientSuggestions"
                                     option-label="label"
-                                    placeholder="Start typing patient details..."
+                                    placeholder="Start typing patient or dependent details..."
                                     fluid
                                     @complete="searchPatients"
                                 />
@@ -253,12 +376,35 @@ const submit = (): void => {
                                 <div class="patient-details-header">
                                     <i class="pi pi-verified"></i>
                                     <span>Selected Patient Details</span>
+                                    <Tag
+                                        v-if="selectedPatient.parent_name"
+                                        :value="`Dependent of ${selectedPatient.parent_name}`"
+                                        severity="info"
+                                    />
                                 </div>
                                 <div class="patient-details-body">
                                     <div><strong>Name:</strong> {{ selectedPatient.name }}</div>
                                     <div><strong>Patient ID:</strong> #{{ selectedPatient.id }}</div>
                                     <div><strong>Phone:</strong> {{ selectedPatient.phone || 'N/A' }}</div>
                                     <div><strong>Email:</strong> {{ selectedPatient.email || 'N/A' }}</div>
+                                </div>
+
+                                <div v-if="selectedPatient.children?.length" class="patient-dependents-switcher">
+                                    <span class="patient-dependents-switcher__label">
+                                        Or book for a dependent of {{ selectedPatient.name }}:
+                                    </span>
+                                    <div class="patient-dependents-switcher__chips">
+                                        <button
+                                            v-for="child in selectedPatient.children"
+                                            :key="child.id"
+                                            type="button"
+                                            class="dependent-switch-chip"
+                                            @click="selectDependentForBooking(child)"
+                                        >
+                                            <i class="pi pi-user"></i>
+                                            {{ child.name }} (#{{ child.id }})
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -343,12 +489,28 @@ const submit = (): void => {
                                 <div>
                                     <p class="booking-section__title">Pick your token</p>
                                     <p class="booking-section__hint">
-                                        Select the exact token number for this appointment.
+                                        {{
+                                            isDoubleBooking
+                                                ? 'Double Appointment enabled — click two open tokens to book 2 slots at once.'
+                                                : 'Select the exact token number for this appointment.'
+                                        }}
                                     </p>
                                 </div>
 
-                                <div v-if="availableTokens.length > 0" class="booking-section__meta">
-                                    {{ availableTokens.length }} tokens available
+                                <div class="token-header-controls">
+                                    <button
+                                        type="button"
+                                        class="double-booking-toggle"
+                                        :class="{ 'is-active': isDoubleBooking }"
+                                        :disabled="availableTokens.length < 2"
+                                        @click="isDoubleBooking = !isDoubleBooking"
+                                    >
+                                        <i class="pi pi-clone"></i>
+                                        <span>Double Appointment (2 Tokens)</span>
+                                    </button>
+                                    <div v-if="availableTokens.length > 0" class="booking-section__meta">
+                                        {{ availableTokens.length }} tokens available
+                                    </div>
                                 </div>
                             </div>
 
@@ -359,7 +521,9 @@ const submit = (): void => {
                                     type="button"
                                     class="token-pill"
                                     :class="{
-                                        'token-pill--selected': token === form.appointment_number,
+                                        'token-pill--selected':
+                                            token === form.appointment_number ||
+                                            (isDoubleBooking && token === form.second_appointment_number),
                                     }"
                                     @click="chooseToken(token)"
                                 >
@@ -372,6 +536,7 @@ const submit = (): void => {
                             </div>
 
                             <InputError :message="form.errors.appointment_number" />
+                            <InputError :message="form.errors.second_appointment_number" />
                         </div>
 
                         <div class="booking-section">
@@ -474,6 +639,100 @@ const submit = (): void => {
                 </template>
             </Card>
         </div>
+
+        <!-- Quick Create Patient Dialog -->
+        <Dialog
+            v-model:visible="createPatientDialogVisible"
+            header="Add New Patient"
+            modal
+            :style="{ width: '32rem', maxWidth: '95vw' }"
+        >
+            <form class="quick-patient-form" @submit.prevent="submitNewPatient">
+                <div class="booking-form-grid">
+                    <div class="field">
+                        <label for="qp_name">Full Name *</label>
+                        <InputText
+                            id="qp_name"
+                            v-model="newPatientForm.name"
+                            required
+                            fluid
+                            placeholder="e.g., Aarav Sharma"
+                        />
+                        <InputError :message="createPatientErrors.name" />
+                    </div>
+                    <div class="field">
+                        <label for="qp_phone">Phone Number *</label>
+                        <InputText
+                            id="qp_phone"
+                            v-model="newPatientForm.phone"
+                            required
+                            fluid
+                            placeholder="9876543210"
+                        />
+                        <InputError :message="createPatientErrors.phone" />
+                    </div>
+                </div>
+                <div class="booking-form-grid">
+                    <div class="field">
+                        <label for="qp_gender">Gender</label>
+                        <Select
+                            id="qp_gender"
+                            v-model="newPatientForm.gender"
+                            :options="genderOptions"
+                            option-label="label"
+                            option-value="value"
+                            placeholder="Select gender"
+                            show-clear
+                            fluid
+                        />
+                    </div>
+                    <div class="field">
+                        <label for="qp_dob">Date of Birth</label>
+                        <InputText
+                            id="qp_dob"
+                            v-model="newPatientForm.date_of_birth"
+                            type="date"
+                            fluid
+                        />
+                    </div>
+                </div>
+                <div class="booking-form-grid">
+                    <div class="field">
+                        <label for="qp_city">City</label>
+                        <InputText
+                            id="qp_city"
+                            v-model="newPatientForm.city"
+                            fluid
+                            placeholder="e.g., Mumbai"
+                        />
+                    </div>
+                    <div class="field">
+                        <label for="qp_address">Address</label>
+                        <InputText
+                            id="qp_address"
+                            v-model="newPatientForm.address"
+                            fluid
+                            placeholder="Street or landmark"
+                        />
+                    </div>
+                </div>
+                <div class="quick-patient-actions">
+                    <Button
+                        type="button"
+                        label="Cancel"
+                        severity="secondary"
+                        outlined
+                        @click="createPatientDialogVisible = false"
+                    />
+                    <Button
+                        type="submit"
+                        label="Create & Select Patient"
+                        icon="pi pi-check"
+                        :loading="createPatientSubmitting"
+                    />
+                </div>
+            </form>
+        </Dialog>
     </div>
 </template>
 
@@ -800,5 +1059,91 @@ const submit = (): void => {
     gap: 0.5rem;
     font-size: 0.88rem;
     color: #10242e;
+}
+
+.patient-dependents-switcher {
+    margin-top: 0.85rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed rgba(12, 110, 114, 0.2);
+    display: grid;
+    gap: 0.45rem;
+}
+
+.patient-dependents-switcher__label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #0c6e72;
+}
+
+.patient-dependents-switcher__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.dependent-switch-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    background: #ffffff;
+    color: #0c6e72;
+    border: 1px solid rgba(12, 110, 114, 0.3);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.dependent-switch-chip:hover {
+    background: #0c6e72;
+    color: #ffffff;
+}
+
+.token-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.double-booking-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 181, 186, 0.35);
+    background: #ffffff;
+    color: #0c6e72;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.double-booking-toggle.is-active {
+    background: #0c6e72;
+    border-color: #0c6e72;
+    color: #ffffff;
+}
+
+.double-booking-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.quick-patient-form {
+    display: grid;
+    gap: 1rem;
+}
+
+.quick-patient-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--surface-border);
 }
 </style>

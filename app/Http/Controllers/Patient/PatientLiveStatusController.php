@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Patient;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use App\Models\BookingSetting;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -21,7 +22,18 @@ class PatientLiveStatusController extends Controller
         $patient = $request->user('patient');
         $today = today();
 
+        $familyIds = [];
+        if ($patient) {
+            $ownerId = $patient->parent_id ?? $patient->id;
+            $familyIds = $patient->newQuery()
+                ->where('id', $ownerId)
+                ->orWhere('parent_id', $ownerId)
+                ->pluck('id')
+                ->all();
+        }
+
         $appointments = Appointment::query()
+            ->with('patient:id,name')
             ->whereDate('appointment_date', $today->toDateString())
             ->orderBy('appointment_order')
             ->get();
@@ -37,7 +49,7 @@ class PatientLiveStatusController extends Controller
                 'token' => $apt->appointment_number,
                 'sequence' => (int) $apt->appointment_order,
                 'status' => $this->getQueueStatus($apt, $currentAppointmentIds),
-                'isPatient' => $patient && $apt->patient_id === $patient->id,
+                'isPatient' => $patient && in_array($apt->patient_id, $familyIds, true),
             ])
             ->values()
             ->all();
@@ -48,39 +60,43 @@ class PatientLiveStatusController extends Controller
                 'token' => $apt->appointment_number,
                 'sequence' => (int) $apt->appointment_order,
                 'status' => $this->getQueueStatus($apt, $currentAppointmentIds),
-                'isPatient' => $patient && $apt->patient_id === $patient->id,
+                'isPatient' => $patient && in_array($apt->patient_id, $familyIds, true),
             ])
             ->values()
             ->all();
 
-        $patientAptToday = $appointments->first(fn (Appointment $apt) => $patient && $apt->patient_id === $patient->id);
+        $patientAppointmentsToday = $appointments
+            ->filter(fn (Appointment $apt) => $patient && in_array($apt->patient_id, $familyIds, true))
+            ->map(function (Appointment $patientAptToday) use ($appointments, $currentAppointmentIds): array {
+                $session = Appointment::sessionLabelForSlot($patientAptToday->slot);
+                $queuePosition = $appointments
+                    ->filter(function (Appointment $apt) use ($patientAptToday, $session, $currentAppointmentIds) {
+                        if (Appointment::sessionLabelForSlot($apt->slot) !== $session) {
+                            return false;
+                        }
+                        $status = $this->getQueueStatus($apt, $currentAppointmentIds);
+                        if ($status !== 'pending') {
+                            return false;
+                        }
 
-        $patientAppointmentToday = null;
-        if ($patientAptToday) {
-            $session = Appointment::sessionLabelForSlot($patientAptToday->slot);
-            $queuePosition = $appointments
-                ->filter(function (Appointment $apt) use ($patientAptToday, $session, $currentAppointmentIds) {
-                    if (Appointment::sessionLabelForSlot($apt->slot) !== $session) {
-                        return false;
-                    }
-                    $status = $this->getQueueStatus($apt, $currentAppointmentIds);
-                    if ($status !== 'pending') {
-                        return false;
-                    }
+                        return $apt->appointment_order < $patientAptToday->appointment_order;
+                    })
+                    ->count();
 
-                    return $apt->appointment_order < $patientAptToday->appointment_order;
-                })
-                ->count();
+                return [
+                    'id' => $patientAptToday->id,
+                    'patientName' => $patientAptToday->patient?->name,
+                    'token' => $patientAptToday->appointment_number,
+                    'session' => $session,
+                    'status' => $this->getQueueStatus($patientAptToday, $currentAppointmentIds),
+                    'queuePosition' => $queuePosition,
+                    'onHold' => (bool) $patientAptToday->on_hold,
+                ];
+            })
+            ->values()
+            ->all();
 
-            $patientAppointmentToday = [
-                'id' => $patientAptToday->id,
-                'token' => $patientAptToday->appointment_number,
-                'session' => $session,
-                'status' => $this->getQueueStatus($patientAptToday, $currentAppointmentIds),
-                'queuePosition' => $queuePosition,
-                'onHold' => (bool) $patientAptToday->on_hold,
-            ];
-        }
+        $patientAppointmentToday = $patientAppointmentsToday[0] ?? null;
 
         $settings = BookingSetting::current();
         $now = now();
@@ -111,12 +127,12 @@ class PatientLiveStatusController extends Controller
 
         $morningTimings = null;
         if ($morningOpen && $morningClose) {
-            $morningTimings = \Carbon\Carbon::parse($morningOpen)->format('g:i A') . ' - ' . \Carbon\Carbon::parse($morningClose)->format('g:i A');
+            $morningTimings = Carbon::parse($morningOpen)->format('g:i A').' - '.Carbon::parse($morningClose)->format('g:i A');
         }
 
         $eveningTimings = null;
         if ($eveningOpen && $eveningClose) {
-            $eveningTimings = \Carbon\Carbon::parse($eveningOpen)->format('g:i A') . ' - ' . \Carbon\Carbon::parse($eveningClose)->format('g:i A');
+            $eveningTimings = Carbon::parse($eveningOpen)->format('g:i A').' - '.Carbon::parse($eveningClose)->format('g:i A');
         }
 
         $isMorningClosed = $settings->isClosedOn($today, 'Morning');
@@ -142,6 +158,7 @@ class PatientLiveStatusController extends Controller
             'morningQueue' => $morningQueue,
             'eveningQueue' => $eveningQueue,
             'patientAppointmentToday' => $patientAppointmentToday,
+            'patientAppointmentsToday' => $patientAppointmentsToday,
         ]);
     }
 

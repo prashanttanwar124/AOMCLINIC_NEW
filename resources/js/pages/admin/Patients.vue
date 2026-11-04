@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import Avatar from 'primevue/avatar';
 import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
 import InputText from 'primevue/inputtext';
-import SelectButton from 'primevue/selectbutton';
+import Select from 'primevue/select';
+import Textarea from 'primevue/textarea';
 import Tag from 'primevue/tag';
 import Dialog from 'primevue/dialog';
 import AutoComplete from 'primevue/autocomplete';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { useConfirm } from 'primevue/useconfirm';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppointmentDetailsDialog from '@/components/AppointmentDetailsDialog.vue';
 import InputError from '@/components/InputError.vue';
-import { booking, dashboard } from '@/routes';
+import PasswordInput from '@/components/PasswordInput.vue';
+import { dashboard } from '@/routes';
 import { patients as patientsRoute } from '@/routes/admin';
 import PatientController from '@/actions/App/Http/Controllers/Admin/PatientController';
 import http from '@/lib/http';
@@ -134,7 +137,11 @@ type PatientCard = {
     name: string;
     email: string | null;
     phone: string | null;
+    rawPhone?: string | null;
+    countryCode?: string | null;
+    countryCallingCode?: string | null;
     gender: string | null;
+    genderValue?: string | null;
     age: number | null;
     city: string | null;
     dateOfBirth: string | null;
@@ -185,11 +192,21 @@ defineOptions({
 const props = defineProps<{
     patients: PaginatedPatients;
     filters: {
+        id?: string | number | null;
         search: string | null;
+        filter?: 'all' | 'dependents' | 'account_holders' | null;
     };
 }>();
 
+const canTeleportActions = ref(false);
+onMounted(() => {
+    canTeleportActions.value = !!document.getElementById('admin-header-actions');
+});
+
 const searchQuery = ref(props.filters.search ?? '');
+const activeFilter = ref<'all' | 'dependents' | 'account_holders'>(
+    (props.filters.filter as 'all' | 'dependents' | 'account_holders') ?? 'all',
+);
 const selectedPatientId = ref<number | null>(null);
 
 const selectedPatient = computed<PatientCard | null>(() => {
@@ -201,7 +218,6 @@ const selectedPatient = computed<PatientCard | null>(() => {
 
 const selectedAppointment = ref<AppointmentCard | null>(null);
 const detailDialogVisible = ref(false);
-const todayKey = new Intl.DateTimeFormat('en-CA').format(new Date());
 
 const filteredPatients = computed<PatientCard[]>(() => {
     return props.patients.data;
@@ -213,6 +229,15 @@ watch(
     (data) => {
         if (!data.length) {
             selectedPatientId.value = null;
+
+            return;
+        }
+
+        if (
+            props.filters.id &&
+            data.some((patient) => patient.id === Number(props.filters.id))
+        ) {
+            selectedPatientId.value = Number(props.filters.id);
 
             return;
         }
@@ -229,9 +254,20 @@ function selectPatient(patient: PatientCard): void {
 }
 
 function selectFamilyMember(child: { id: number; name: string }): void {
+    const inCurrentList = props.patients.data.find((p) => p.id === child.id);
+    if (inCurrentList) {
+        selectedPatientId.value = child.id;
+
+        return;
+    }
+
     router.get(
         patientsRoute().url,
-        { id: child.id },
+        {
+            id: child.id,
+            search: searchQuery.value.trim() || undefined,
+            filter: activeFilter.value !== 'all' ? activeFilter.value : undefined,
+        },
         {
             preserveState: false,
             preserveScroll: true,
@@ -240,6 +276,11 @@ function selectFamilyMember(child: { id: number; name: string }): void {
             },
         },
     );
+}
+
+function setPatientFilter(filter: 'all' | 'dependents' | 'account_holders'): void {
+    activeFilter.value = filter;
+    handleSearch();
 }
 
 function openDetails(appointment: AppointmentCard): void {
@@ -257,7 +298,10 @@ function handleSearch(): void {
 
     router.get(
         patientsRoute().url,
-        { search: searchQuery.value.trim() || undefined },
+        {
+            search: searchQuery.value.trim() || undefined,
+            filter: activeFilter.value !== 'all' ? activeFilter.value : undefined,
+        },
         {
             preserveState: true,
             preserveScroll: true,
@@ -462,15 +506,127 @@ function submitJoin(): void {
     );
 }
 
+const confirm = useConfirm();
+
 function unlinkAccount(patient: { id: number; name: string }): void {
-    if (confirm(`Are you sure you want to unlink ${patient.name} from their parent account?`)) {
-        router.post(
-            PatientController.unlink(patient.id).url,
-            {},
-            {
-                preserveScroll: true,
-            }
-        );
+    confirm.require({
+        header: 'Unlink Patient Account',
+        message: `Are you sure you want to unlink "${patient.name}" from their parent account?`,
+        icon: 'pi pi-exclamation-triangle',
+        rejectProps: {
+            label: 'Cancel',
+            severity: 'secondary',
+            outlined: true,
+        },
+        acceptProps: {
+            label: 'Unlink Account',
+            severity: 'danger',
+        },
+        accept: () => {
+            router.post(
+                PatientController.unlink(patient.id).url,
+                {},
+                {
+                    preserveScroll: true,
+                },
+            );
+        },
+    });
+}
+
+// Create / Edit Patient Modal State
+const patientDialogVisible = ref(false);
+const isEditingPatient = ref(false);
+const editingPatientId = ref<number | null>(null);
+
+const genderOptions = [
+    { label: 'Male', value: 'male' },
+    { label: 'Female', value: 'female' },
+    { label: 'Other', value: 'other' },
+    { label: 'Prefer not to say', value: 'prefer_not_to_say' },
+];
+
+const patientForm = useForm({
+    name: '',
+    phone: '',
+    country_code: 'IN',
+    country_calling_code: '91',
+    email: '',
+    password: '',
+    gender: '' as string | null,
+    date_of_birth: '',
+    city: '',
+    address: '',
+    parent_id: null as number | null,
+});
+
+const creatingDependentForParent = ref<PatientCard | null>(null);
+
+function openCreatePatientDialog(): void {
+    isEditingPatient.value = false;
+    editingPatientId.value = null;
+    creatingDependentForParent.value = null;
+    patientForm.reset();
+    patientForm.parent_id = null;
+    patientForm.clearErrors();
+    patientDialogVisible.value = true;
+}
+
+function openCreateDependentDialog(parent: PatientCard): void {
+    isEditingPatient.value = false;
+    editingPatientId.value = null;
+    creatingDependentForParent.value = parent;
+    patientForm.reset();
+    patientForm.clearErrors();
+    patientForm.parent_id = parent.id;
+    patientForm.phone = parent.rawPhone ?? (parent.phone ? parent.phone.replace(/^\+\d+\s*/, '') : '');
+    patientForm.country_code = parent.countryCode ?? 'IN';
+    patientForm.country_calling_code = parent.countryCallingCode ?? '91';
+    patientForm.city = parent.city ?? '';
+    patientForm.address = parent.address ?? '';
+    patientDialogVisible.value = true;
+}
+
+function openEditPatientDialog(patient: PatientCard): void {
+    isEditingPatient.value = true;
+    editingPatientId.value = patient.id;
+    creatingDependentForParent.value = null;
+    patientForm.clearErrors();
+    patientForm.parent_id = patient.parent?.id ?? null;
+    patientForm.name = patient.name;
+    patientForm.phone =
+        patient.rawPhone ??
+        (patient.phone ? patient.phone.replace(/^\+\d+\s*/, '') : '');
+    patientForm.country_code = patient.countryCode ?? 'IN';
+    patientForm.country_calling_code = patient.countryCallingCode ?? '91';
+    patientForm.email = patient.email ?? '';
+    patientForm.password = '';
+    patientForm.gender =
+        patient.genderValue ??
+        (patient.gender ? patient.gender.toLowerCase().replace(/\s+/g, '_') : null);
+    patientForm.date_of_birth = patient.dateOfBirth ?? '';
+    patientForm.city = patient.city ?? '';
+    patientForm.address = patient.address ?? '';
+    patientDialogVisible.value = true;
+}
+
+function submitPatientForm(): void {
+    if (isEditingPatient.value && editingPatientId.value) {
+        patientForm.patch(PatientController.update(editingPatientId.value).url, {
+            preserveScroll: true,
+            onSuccess: () => {
+                patientDialogVisible.value = false;
+                patientForm.reset();
+            },
+        });
+    } else {
+        patientForm.post(PatientController.store().url, {
+            preserveScroll: true,
+            onSuccess: () => {
+                patientDialogVisible.value = false;
+                patientForm.reset();
+            },
+        });
     }
 }
 </script>
@@ -479,14 +635,39 @@ function unlinkAccount(patient: { id: number; name: string }): void {
     <Head title="Patients Registry" />
 
     <div class="page-grid patients-workspace">
+        <!-- Teleport Primary Action into Header -->
+        <Teleport v-if="canTeleportActions" to="#admin-header-actions">
+            <div class="header-action-group">
+                <Button
+                    label="Add Patient"
+                    icon="pi pi-user-plus"
+                    severity="primary"
+                    size="small"
+                    class="flat-btn"
+                    @click="openCreatePatientDialog"
+                />
+            </div>
+        </Teleport>
+
         <section class="patients-split-view">
             <article class="page-card admin-table-card patients-list-pane">
                 <div class="admin-toolbar patient-list-toolbar">
-                    <div class="admin-toolbar__copy">
-                        <h3 class="panel-title">Patients</h3>
-                        <p class="panel-subtitle">
-                            Total records: {{ props.patients.total }}
-                        </p>
+                    <div class="patient-list-toolbar__top">
+                        <div class="admin-toolbar__copy">
+                            <h3 class="panel-title">Patients</h3>
+                            <p class="panel-subtitle">
+                                Total records: {{ props.patients.total }}
+                            </p>
+                        </div>
+
+                        <Button
+                            label="Add Patient"
+                            icon="pi pi-user-plus"
+                            severity="primary"
+                            size="small"
+                            class="flat-btn"
+                            @click="openCreatePatientDialog"
+                        />
                     </div>
 
                     <div class="admin-search">
@@ -494,7 +675,7 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                             <i class="pi pi-search patient-search-icon"></i>
                             <InputText
                                 v-model="searchQuery"
-                                placeholder="Search name, last name, phone, or ID..."
+                                placeholder="Search name, dependent, parent phone, or ID..."
                                 class="admin-search__input patient-search-input"
                                 @keyup.enter="handleSearch"
                             />
@@ -507,6 +688,33 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                             size="small"
                             @click="handleClearSearch"
                         />
+                    </div>
+
+                    <div class="patient-filter-pills">
+                        <button
+                            type="button"
+                            class="patient-filter-pill"
+                            :class="{ 'is-active': activeFilter === 'all' }"
+                            @click="setPatientFilter('all')"
+                        >
+                            All Patients
+                        </button>
+                        <button
+                            type="button"
+                            class="patient-filter-pill"
+                            :class="{ 'is-active': activeFilter === 'dependents' }"
+                            @click="setPatientFilter('dependents')"
+                        >
+                            Dependents
+                        </button>
+                        <button
+                            type="button"
+                            class="patient-filter-pill"
+                            :class="{ 'is-active': activeFilter === 'account_holders' }"
+                            @click="setPatientFilter('account_holders')"
+                        >
+                            Account Holders
+                        </button>
                     </div>
                 </div>
 
@@ -525,11 +733,29 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                                 class="patient-avatar patient-avatar--list"
                             />
                             <div class="patient-directory-item__identity">
-                                <span class="patient-directory-item__name">{{ patient.name }}</span>
+                                <div class="patient-directory-item__name-row">
+                                    <span class="patient-directory-item__name">{{ patient.name }}</span>
+                                    <span v-if="patient.parent" class="patient-dependent-pill">
+                                        Dependent of {{ patient.parent.name }}
+                                    </span>
+                                </div>
                                 <span class="patient-directory-item__id">
                                     ID #{{ patient.id }}
                                     <template v-if="patient.phone"> · {{ patient.phone }}</template>
                                 </span>
+                                <div v-if="patient.children?.length" class="patient-directory-dependents">
+                                    <span class="patient-directory-dependents__label">Dependents:</span>
+                                    <button
+                                        v-for="child in patient.children"
+                                        :key="child.id"
+                                        type="button"
+                                        class="patient-directory-dependent-chip"
+                                        @click.stop="selectFamilyMember(child)"
+                                    >
+                                        <i class="pi pi-user"></i>
+                                        {{ child.name }}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div class="patient-directory-item__right">
@@ -645,6 +871,14 @@ function unlinkAccount(patient: { id: number; name: string }): void {
 
                         <div class="patient-summary-card__actions">
                             <Button
+                                icon="pi pi-pencil"
+                                label="Edit"
+                                severity="secondary"
+                                outlined
+                                size="small"
+                                @click="openEditPatientDialog(selectedPatient)"
+                            />
+                            <Button
                                 icon="pi pi-phone"
                                 label="Call"
                                 outlined
@@ -745,9 +979,19 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                         </div>
                         <div v-if="!selectedPatient.parent" class="patient-block-header__actions">
                             <Button
-                                label="Add Dependent"
-                                icon="pi pi-plus"
+                                label="New Dependent"
+                                icon="pi pi-user-plus"
                                 size="small"
+                                severity="primary"
+                                outlined
+                                class="flat-btn"
+                                @click="openCreateDependentDialog(selectedPatient)"
+                            />
+                            <Button
+                                label="Link Existing"
+                                icon="pi pi-link"
+                                size="small"
+                                severity="secondary"
                                 outlined
                                 class="flat-btn"
                                 @click="openJoinDialog"
@@ -883,6 +1127,7 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                         :value="selectedPatient.appointments"
                         class="patient-appointments-table"
                         row-hover
+                        striped-rows
                         responsive-layout="scroll"
                         @row-click="(e) => openDetails(e.data)"
                     >
@@ -891,7 +1136,7 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                             style="width: 7rem; min-width: 7rem"
                         >
                             <template #body="{ data }">
-                                <div class="patient-token-pill">
+                                <div class="admin-token-chip">
                                     T-{{
                                         formatToken(data.appointmentSequence)
                                     }}
@@ -937,7 +1182,7 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                         </Column>
                         <Column
                             header="Status"
-                            style="width: 8rem; min-width: 8rem"
+                            style="width: 8.5rem; min-width: 8.5rem"
                         >
                             <template #body="{ data }">
                                 <Tag
@@ -945,6 +1190,7 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                                     :severity="
                                         queueStatusSeverity(data.queueStatus)
                                     "
+                                    rounded
                                 />
                             </template>
                         </Column>
@@ -956,10 +1202,13 @@ function unlinkAccount(patient: { id: number; name: string }): void {
                         >
                             <template #body="{ data }">
                                 <Button
+                                    v-tooltip.top="'Inspect Clinical Case'"
                                     icon="pi pi-folder-open"
-                                    outlined
+                                    severity="secondary"
+                                    text
+                                    rounded
                                     size="small"
-                                    @click="openDetails(data)"
+                                    @click.stop="openDetails(data)"
                                 />
                             </template>
                         </Column>
@@ -994,6 +1243,178 @@ function unlinkAccount(patient: { id: number; name: string }): void {
             :appointment="selectedAppointment"
             @saved="onDialogSaved"
         />
+
+        <!-- Create / Edit Patient Dialog -->
+        <Dialog
+            v-model:visible="patientDialogVisible"
+            :header="
+                isEditingPatient
+                    ? 'Edit Patient Profile'
+                    : creatingDependentForParent
+                      ? `Add Dependent under ${creatingDependentForParent.name}`
+                      : 'Add New Patient'
+            "
+            modal
+            class="admin-dialog"
+            :style="{ width: '36rem', maxWidth: '95vw' }"
+        >
+            <form class="dialog-form" @submit.prevent="submitPatientForm">
+                <div class="form-row">
+                    <div class="field">
+                        <label for="patient_name" class="form-label">
+                            Full Name <span class="required">*</span>
+                        </label>
+                        <InputText
+                            id="patient_name"
+                            v-model="patientForm.name"
+                            required
+                            autofocus
+                            fluid
+                            placeholder="e.g., Aarav Sharma"
+                            :invalid="!!patientForm.errors.name"
+                        />
+                        <InputError :message="patientForm.errors.name" />
+                    </div>
+
+                    <div class="field">
+                        <label for="patient_phone" class="form-label">
+                            Phone Number
+                            <span v-if="!patientForm.parent_id" class="required">*</span>
+                            <span v-else class="form-label__hint">(Uses parent phone if blank)</span>
+                        </label>
+                        <InputText
+                            id="patient_phone"
+                            v-model="patientForm.phone"
+                            :required="!patientForm.parent_id"
+                            fluid
+                            placeholder="9876543210"
+                            :invalid="!!patientForm.errors.phone"
+                        />
+                        <InputError :message="patientForm.errors.phone" />
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="field">
+                        <label for="patient_gender" class="form-label">
+                            Gender
+                        </label>
+                        <Select
+                            id="patient_gender"
+                            v-model="patientForm.gender"
+                            :options="genderOptions"
+                            option-label="label"
+                            option-value="value"
+                            placeholder="Select gender"
+                            show-clear
+                            checkmark
+                            fluid
+                            :invalid="!!patientForm.errors.gender"
+                        />
+                        <InputError :message="patientForm.errors.gender" />
+                    </div>
+
+                    <div class="field">
+                        <label for="patient_dob" class="form-label">
+                            Date of Birth
+                        </label>
+                        <InputText
+                            id="patient_dob"
+                            v-model="patientForm.date_of_birth"
+                            type="date"
+                            fluid
+                            :invalid="!!patientForm.errors.date_of_birth"
+                        />
+                        <InputError :message="patientForm.errors.date_of_birth" />
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="field">
+                        <label for="patient_email" class="form-label">
+                            Email Address
+                            <span class="form-label__hint">(Portal login)</span>
+                        </label>
+                        <InputText
+                            id="patient_email"
+                            v-model="patientForm.email"
+                            type="email"
+                            fluid
+                            placeholder="patient@example.com"
+                            :invalid="!!patientForm.errors.email"
+                        />
+                        <InputError :message="patientForm.errors.email" />
+                    </div>
+
+                    <div class="field">
+                        <label for="patient_password" class="form-label">
+                            Portal Password
+                            <span class="form-label__hint">
+                                {{ isEditingPatient ? '(Blank to keep)' : '(Optional)' }}
+                            </span>
+                        </label>
+                        <PasswordInput
+                            id="patient_password"
+                            v-model="patientForm.password"
+                            autocomplete="new-password"
+                            placeholder="••••••••"
+                            :invalid="!!patientForm.errors.password"
+                        />
+                        <InputError :message="patientForm.errors.password" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="patient_city" class="form-label">
+                        City
+                    </label>
+                    <InputText
+                        id="patient_city"
+                        v-model="patientForm.city"
+                        fluid
+                        placeholder="e.g., Mumbai"
+                        :invalid="!!patientForm.errors.city"
+                    />
+                    <InputError :message="patientForm.errors.city" />
+                </div>
+
+                <div class="field">
+                    <label for="patient_address" class="form-label">
+                        Address
+                    </label>
+                    <Textarea
+                        id="patient_address"
+                        v-model="patientForm.address"
+                        rows="2"
+                        auto-resize
+                        fluid
+                        placeholder="Street address, apartment, or landmark..."
+                        :invalid="!!patientForm.errors.address"
+                    />
+                    <InputError :message="patientForm.errors.address" />
+                </div>
+
+                <div class="dialog-footer">
+                    <Button
+                        type="button"
+                        label="Cancel"
+                        severity="secondary"
+                        outlined
+                        class="flat-btn"
+                        :disabled="patientForm.processing"
+                        @click="patientDialogVisible = false"
+                    />
+                    <Button
+                        type="submit"
+                        :label="isEditingPatient ? 'Save Changes' : 'Create Patient'"
+                        icon="pi pi-check"
+                        severity="primary"
+                        class="flat-btn"
+                        :loading="patientForm.processing"
+                    />
+                </div>
+            </form>
+        </Dialog>
 
         <Dialog
             v-model:visible="joinDialogVisible"
@@ -1422,6 +1843,71 @@ function unlinkAccount(patient: { id: number; name: string }): void {
     gap: 0.75rem;
 }
 
+.patient-list-toolbar__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.header-action-group {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+/* Modal Dialog Form Styles */
+.dialog-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+    padding-top: 0.35rem;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+@media (max-width: 600px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.form-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+.form-label__hint {
+    font-weight: 500;
+    color: var(--text-secondary-color);
+    font-size: 0.78rem;
+}
+
+.required {
+    color: #ef4444;
+}
+
+.dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    margin-top: 0.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--surface-border);
+}
+
 .patient-list-toolbar .admin-search {
     width: 100%;
     display: flex;
@@ -1562,5 +2048,88 @@ function unlinkAccount(patient: { id: number; name: string }): void {
 .join-dialog-content :deep(.p-autocomplete),
 .join-dialog-content :deep(.p-autocomplete-input) {
     width: 100%;
+}
+
+.patient-filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    width: 100%;
+}
+
+.patient-filter-pill {
+    border: 1px solid #d7e3e8;
+    background: #ffffff;
+    color: #4b616e;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.patient-filter-pill:hover {
+    border-color: #0c6e72;
+    color: #0c6e72;
+}
+
+.patient-filter-pill.is-active {
+    background: #0c6e72;
+    border-color: #0c6e72;
+    color: #ffffff;
+}
+
+.patient-directory-item__name-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.patient-dependent-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: rgba(14, 116, 144, 0.1);
+    color: #0e7490;
+    border: 1px solid rgba(14, 116, 144, 0.22);
+}
+
+.patient-directory-dependents {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.28rem;
+}
+
+.patient-directory-dependents__label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #647b87;
+}
+
+.patient-directory-dependent-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.14rem 0.48rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.patient-directory-dependent-chip:hover {
+    background: #dcfce7;
+    border-color: #86efac;
 }
 </style>

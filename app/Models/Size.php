@@ -19,4 +19,12 @@ class Size extends Model
     {
         return $this->hasMany(Medicine::class);
     }
+
+    /**
+     * Get the medicine stock variations associated with this size.
+     */
+    public function stocks(): HasMany
+    {
+        return $this->hasMany(MedicineStock::class);
+    }
 }

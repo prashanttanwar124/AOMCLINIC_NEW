@@ -1,9 +1,9 @@
 <?php
 
-use App\Models\Patient;
-use App\Models\User;
 use App\Models\CertificateType;
 use App\Models\MedicalCertificate;
+use App\Models\Patient;
+use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guest users are redirected to login from medical certificates', function () {
@@ -37,8 +37,12 @@ test('authenticated staff can view medical certificates list and types', functio
             ->where('certificates.data.0.patient_name', 'Jane Smith')
             ->where('certificates.data.0.certificate_type_name', 'Sick Leave Cert')
             ->where('certificates.data.0.certificate_number', $cert->certificate_number)
+            ->where('certificates.data.0.duration_days', 3)
+            ->where('summary.total', 1)
+            ->where('summary.active', 1)
             ->has('certificateTypes', 1)
             ->where('certificateTypes.0.name', 'Sick Leave Cert')
+            ->where('certificateTypes.0.medical_certificates_count', 1)
         );
 });
 
@@ -58,7 +62,7 @@ test('authenticated staff can create a certificate type', function () {
     expect($type)->not->toBeNull()
         ->and($type->name)->toBe('General Fitness Certificate')
         ->and($type->description)->toBe('Issued for gym or school fitness clearances')
-        ->and((float)$type->default_charge)->toBe(15.50);
+        ->and((float) $type->default_charge)->toBe(15.50);
 });
 
 test('authenticated staff can update a certificate type', function () {
@@ -81,7 +85,7 @@ test('authenticated staff can update a certificate type', function () {
     $freshType = $type->fresh();
     expect($freshType->name)->toBe('Updated Cert Name')
         ->and($freshType->description)->toBe('Updated description')
-        ->and((float)$freshType->default_charge)->toBe(20.00);
+        ->and((float) $freshType->default_charge)->toBe(20.00);
 });
 
 test('authenticated staff can delete a certificate type', function () {
@@ -121,7 +125,7 @@ test('authenticated staff can issue a medical certificate', function () {
         ->and($cert->certificate_type_id)->toBe($type->id)
         ->and($cert->certificate_number)->toBe('MC-00001')
         ->and($cert->diagnosis)->toBe('Acute Migraine')
-        ->and((float)$cert->charge_amount)->toBe(30.00)
+        ->and((float) $cert->charge_amount)->toBe(30.00)
         ->and($cert->payment_status)->toBe('unpaid')
         ->and($cert->status)->toBe('active');
 });
@@ -158,7 +162,7 @@ test('authenticated staff can update a medical certificate', function () {
     $response->assertRedirect();
     $freshCert = $cert->fresh();
     expect($freshCert->diagnosis)->toBe('Common Cold')
-        ->and((float)$freshCert->charge_amount)->toBe(15.00)
+        ->and((float) $freshCert->charge_amount)->toBe(15.00)
         ->and($freshCert->payment_status)->toBe('paid')
         ->and($freshCert->notes)->toBe('Drink warm fluids');
 });
@@ -192,6 +196,8 @@ test('authenticated staff can view the printable medical certificate', function 
         'patient_id' => $patient->id,
         'certificate_type_id' => $type->id,
         'issue_date' => today()->toDateString(),
+        'start_date' => today()->toDateString(),
+        'end_date' => today()->addDays(2)->toDateString(),
         'charge_amount' => 10.00,
         'payment_status' => 'unpaid',
         'status' => 'active',
@@ -203,6 +209,9 @@ test('authenticated staff can view the printable medical certificate', function 
         ->assertInertia(fn (Assert $page) => $page
             ->component('admin/medical-certificates/Print')
             ->where('certificate.patient_name', 'Jane Smith')
+            ->where('certificate.certificate_type_name', 'Sick Leave Cert')
             ->where('certificate.certificate_number', $cert->certificate_number)
+            ->where('certificate.duration_days', 3)
+            ->where('certificate.payment_status', 'unpaid')
         );
 });

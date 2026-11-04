@@ -57,17 +57,26 @@ class PatientAppointmentController extends Controller
     public function store(StorePatientAppointmentRequest $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validated();
-        $patient = $request->user('patient');
         $selectedPatientId = (int) $validated['patient_id'];
+        $secondToken = isset($validated['second_appointment_number']) && filled($validated['second_appointment_number'])
+            ? (int) $validated['second_appointment_number']
+            : null;
 
-        $appointment = DB::transaction(function () use ($validated, $selectedPatientId): Appointment {
+        $appointment = DB::transaction(function () use ($validated, $selectedPatientId, $secondToken): Appointment {
             $slot = Appointment::slotForSession($validated['appointment_session']);
             $selectedToken = (int) $validated['appointment_number'];
             $settings = BookingSetting::current();
+            $capacity = $settings->capacityForSession($validated['appointment_session']);
 
-            if ($selectedToken > $settings->capacityForSession($validated['appointment_session'])) {
+            if ($selectedToken > $capacity) {
                 throw ValidationException::withMessages([
                     'appointment_number' => 'Selected token is no longer available. Please choose another token.',
+                ]);
+            }
+
+            if ($secondToken !== null && $secondToken > $capacity) {
+                throw ValidationException::withMessages([
+                    'second_appointment_number' => 'Selected second token is no longer available. Please choose another token.',
                 ]);
             }
 
@@ -84,31 +93,52 @@ class PatientAppointmentController extends Controller
                 ]);
             }
 
-            if ($slotAppointments->contains('patient_id', $selectedPatientId)) {
+            if ($secondToken !== null && $slotAppointments->contains('appointment_order', $secondToken)) {
                 throw ValidationException::withMessages([
-                    'appointment_session' => 'This patient already has a booking for this date and session.',
+                    'second_appointment_number' => 'Selected second token is no longer available. Please choose another token.',
                 ]);
             }
 
-            return Appointment::query()->create([
+            $appointmentType = Str::of($validated['appointment_type'])->replace('_', ' ')->title()->toString();
+
+            $first = Appointment::query()->create([
                 'patient_id' => $selectedPatientId,
                 'appointment_date' => $validated['appointment_date'],
                 'appointment_number' => (string) $selectedToken,
                 'appointment_order' => $selectedToken,
                 'slot' => $slot,
-                'appointment_type' => Str::of($validated['appointment_type'])->replace('_', ' ')->title()->toString(),
+                'appointment_type' => $appointmentType,
                 'purpose_of_appointment' => $validated['reason_for_visit'] ?? null,
                 'status' => 'pending',
             ]);
+
+            if ($secondToken !== null) {
+                Appointment::query()->create([
+                    'patient_id' => $selectedPatientId,
+                    'appointment_date' => $validated['appointment_date'],
+                    'appointment_number' => (string) $secondToken,
+                    'appointment_order' => $secondToken,
+                    'slot' => $slot,
+                    'appointment_type' => $appointmentType,
+                    'purpose_of_appointment' => $validated['reason_for_visit'] ?? null,
+                    'status' => 'pending',
+                ]);
+            }
+
+            return $first;
         });
 
         $sessionLabel = Appointment::sessionLabelForSlot($appointment->slot);
 
         broadcast(new QueueUpdated($sessionLabel))->toOthers();
 
+        $tokenSummary = $secondToken !== null
+            ? "tokens {$appointment->appointment_number} & {$secondToken}"
+            : "token {$appointment->appointment_number}";
+
         $toast = [
             'type' => 'success',
-            'message' => "Appointment booked for {$appointment->appointment_date->format('d M Y')} ({$sessionLabel}) with token {$appointment->appointment_number}.",
+            'message' => "Appointment booked for {$appointment->appointment_date->format('d M Y')} ({$sessionLabel}) with {$tokenSummary}.",
         ];
 
         if ($request->expectsJson()) {

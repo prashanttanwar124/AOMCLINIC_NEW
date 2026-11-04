@@ -20,35 +20,33 @@ class MedicineController extends Controller
      */
     public function search(Request $request): JsonResponse
     {
-        $query = $request->query('query');
-
-        if (blank($query)) {
-            return response()->json([]);
-        }
-
-        $cleanQuery = str_replace('|', ' ', $query);
-        $words = array_filter(explode(' ', $cleanQuery), function ($word) {
-            return trim($word) !== '';
-        });
+        $query = (string) $request->query('query', '');
 
         $stocksQuery = MedicineStock::query()
             ->with(['medicine', 'category', 'size']);
 
-        foreach ($words as $word) {
-            $stocksQuery->where(function ($q) use ($word) {
-                $q->whereHas('medicine', function ($qm) use ($word) {
-                    $qm->where('name', 'like', "%{$word}%");
-                })
-                    ->orWhereHas('category', function ($qc) use ($word) {
-                        $qc->where('name', 'like', "%{$word}%");
-                    })
-                    ->orWhereHas('size', function ($qs) use ($word) {
-                        $qs->where('name', 'like', "%{$word}%");
-                    });
+        if (filled($query)) {
+            $cleanQuery = str_replace('|', ' ', $query);
+            $words = array_filter(explode(' ', $cleanQuery), function ($word) {
+                return trim($word) !== '';
             });
+
+            foreach ($words as $word) {
+                $stocksQuery->where(function ($q) use ($word) {
+                    $q->whereHas('medicine', function ($qm) use ($word) {
+                        $qm->where('name', 'like', "%{$word}%");
+                    })
+                        ->orWhereHas('category', function ($qc) use ($word) {
+                            $qc->where('name', 'like', "%{$word}%");
+                        })
+                        ->orWhereHas('size', function ($qs) use ($word) {
+                            $qs->where('name', 'like', "%{$word}%");
+                        });
+                });
+            }
         }
 
-        $stocks = $stocksQuery->limit(10)->get();
+        $stocks = $stocksQuery->limit(30)->get();
 
         $results = $stocks->map(function ($stock) {
             $medicineName = $stock->medicine?->name ?? '';
@@ -57,6 +55,8 @@ class MedicineController extends Controller
             return [
                 'id' => "{$stock->medicine_id} | {$stock->category_id} | {$stock->size_id}",
                 'label' => $label,
+                'name' => $medicineName,
+                'category' => $stock->category?->name ?? '',
                 'sizeName' => $stock->size?->name ?? '',
                 'stock' => $stock->quantity,
             ];
@@ -71,10 +71,55 @@ class MedicineController extends Controller
     public function index(Request $request): Response
     {
         $search = $request->query('search');
+        $stockStatus = $request->query('stock_status');
+        $categoryId = $request->query('category_id');
+        $sizeId = $request->query('size_id');
 
-        $namesQuery = Medicine::select('name')
+        $namesQuery = Medicine::query()
+            ->select('name')
             ->when(filled($search), function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%");
+                $trimmed = trim((string) $search);
+                $words = array_filter(preg_split('/[\s|,]+/', $trimmed) ?: [], fn ($w) => trim($w) !== '');
+
+                foreach ($words as $word) {
+                    $q->where(function ($sub) use ($word) {
+                        $sub->where('name', 'like', "%{$word}%")
+                            ->orWhereHas('stocks.category', function ($qc) use ($word) {
+                                $qc->where('name', 'like', "%{$word}%");
+                            })
+                            ->orWhereHas('stocks.size', function ($qs) use ($word) {
+                                $qs->where('name', 'like', "%{$word}%");
+                            });
+                    });
+                }
+            })
+            ->when(filled($categoryId), function ($q) use ($categoryId) {
+                $q->whereHas('stocks', function ($qs) use ($categoryId) {
+                    $qs->where('category_id', (int) $categoryId);
+                });
+            })
+            ->when(filled($sizeId), function ($q) use ($sizeId) {
+                $q->whereHas('stocks', function ($qs) use ($sizeId) {
+                    $qs->where('size_id', (int) $sizeId);
+                });
+            })
+            ->when($stockStatus === 'out_of_stock', function ($q) {
+                $q->where(function ($sub) {
+                    $sub->whereDoesntHave('stocks')
+                        ->orWhereHas('stocks', function ($qs) {
+                            $qs->where('quantity', '<=', 0);
+                        });
+                });
+            })
+            ->when($stockStatus === 'low_stock', function ($q) {
+                $q->whereHas('stocks', function ($qs) {
+                    $qs->whereBetween('quantity', [1, 9]);
+                });
+            })
+            ->when($stockStatus === 'in_stock', function ($q) {
+                $q->whereHas('stocks', function ($qs) {
+                    $qs->where('quantity', '>=', 10);
+                });
             });
 
         $paginatedNames = $namesQuery->groupBy('name')
@@ -118,15 +163,28 @@ class MedicineController extends Controller
 
         $medicines = $paginatedNames;
 
-        $categories = Category::orderBy('name')->get();
-        $sizes = Size::orderBy('name')->get();
+        $categories = Category::withCount('stocks')->orderBy('name')->get();
+        $sizes = Size::withCount('stocks')->orderBy('name')->get();
+
+        $summary = [
+            'totalMedicines' => Medicine::query()->distinct('name')->count('name'),
+            'totalVariations' => MedicineStock::query()->count(),
+            'totalUnits' => (int) MedicineStock::query()->sum('quantity'),
+            'inStockCount' => MedicineStock::query()->where('quantity', '>=', 10)->count(),
+            'lowStockCount' => MedicineStock::query()->whereBetween('quantity', [1, 9])->count(),
+            'outOfStockCount' => MedicineStock::query()->where('quantity', '<=', 0)->count(),
+        ];
 
         return Inertia::render('admin/Medicines', [
             'medicines' => $medicines,
             'categories' => $categories,
             'sizes' => $sizes,
+            'summary' => $summary,
             'filters' => [
                 'search' => $search,
+                'stock_status' => $stockStatus,
+                'category_id' => $categoryId ? (int) $categoryId : null,
+                'size_id' => $sizeId ? (int) $sizeId : null,
             ],
         ]);
     }

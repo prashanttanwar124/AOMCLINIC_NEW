@@ -22,7 +22,7 @@ class PatientDependentController extends Controller
         if ($patient->parent_id !== null) {
             $dependentsQuery = Patient::where(function ($query) use ($ownerId, $patient) {
                 $query->where('parent_id', $ownerId)
-                      ->where('id', '!=', $patient->id);
+                    ->where('id', '!=', $patient->id);
             })->orWhere('id', $ownerId);
         } else {
             $dependentsQuery = Patient::where('parent_id', $ownerId);
@@ -66,7 +66,15 @@ class PatientDependentController extends Controller
             'city' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $dependent = new Patient($validated);
+        $dependent = new Patient([
+            'name' => $validated['name'],
+            'date_of_birth' => $validated['date_of_birth'],
+            'gender' => $validated['gender'],
+            'address' => filled($validated['address'] ?? null) ? $validated['address'] : $patient->address,
+            'city' => filled($validated['city'] ?? null) ? $validated['city'] : $patient->city,
+            'country_code' => $patient->country_code ?? 'IN',
+            'country_calling_code' => $patient->country_calling_code ?? '91',
+        ]);
         $dependent->parent_id = $patient->id; // Linked directly to parent (since patient has parent_id = null here)
         $dependent->save();
 

@@ -91,22 +91,49 @@ defineOptions({
 
 const toast = useToast();
 const activeTab = ref<'current' | 'history'>('current');
+const queueSearchQuery = ref('');
+const quickAddMedicine = ref<any>(null);
+
+const filteredDispatchQueue = computed(() => {
+    const q = queueSearchQuery.value.trim().toLowerCase();
+    if (!q) {
+        return props.appointments;
+    }
+    return props.appointments.filter((apt) => {
+        const name = (apt.patientName || '').toLowerCase();
+        const token = formatToken(apt.appointmentSequence).toLowerCase();
+        const session = (apt.session || '').toLowerCase();
+        return name.includes(q) || token.includes(q) || `token ${token}`.includes(q) || session.includes(q);
+    });
+});
 
 const quickFillSelected = ref<any[]>([]);
 const quickFillSuggestions = ref<any[]>([]);
 
 async function searchQuickFill(event: { query: string }): Promise<void> {
     const query = event.query.trim();
-    if (!query) {
-        quickFillSuggestions.value = [];
-        return;
-    }
     try {
         const { data } = await http.get(searchMedicinesAction({ query: { query } }).url);
         quickFillSuggestions.value = data;
     } catch {
         quickFillSuggestions.value = [];
     }
+}
+
+function onQuickAddMedicineSelected(event: { value: any }): void {
+    const option = event.value;
+    if (!option || typeof option !== 'object') {
+        return;
+    }
+    const parts = (option.label || '').split('|').map((s: string) => s.trim());
+    form.medicines.push({
+        name: parts[0] || option.name || '',
+        category: parts[1] || option.category || '',
+        size: parts[2] || option.sizeName || option.size || '',
+        quantity: 1,
+    });
+    quickFillSelected.value.push(option);
+    quickAddMedicine.value = null;
 }
 
 // Setup form using Inertia useForm
@@ -392,13 +419,20 @@ function submitForm(): void {
                     </div>
                 </template>
                 <template #content>
-                    <div v-if="appointments.length === 0" class="empty-list-state">
+                    <div class="mb-3">
+                        <InputText
+                            v-model="queueSearchQuery"
+                            placeholder="Search queue by patient name or token..."
+                            class="w-full"
+                        />
+                    </div>
+                    <div v-if="filteredDispatchQueue.length === 0" class="empty-list-state">
                         <i class="pi pi-calendar-times"></i>
-                        <p>No appointments scheduled for today.</p>
+                        <p>No matching appointments in today's dispatch queue.</p>
                     </div>
                     <ul v-else class="queue-list">
                         <li
-                            v-for="apt in appointments"
+                            v-for="apt in filteredDispatchQueue"
                             :key="apt.id"
                             class="queue-item"
                             :class="{ 'is-selected': selectedId === apt.id }"
@@ -521,6 +555,30 @@ function submitForm(): void {
                                     outlined
                                     @click="addMedicineRow"
                                 />
+                            </div>
+
+                            <div class="mb-3">
+                                <AutoComplete
+                                    v-model="quickAddMedicine"
+                                    :suggestions="quickFillSuggestions"
+                                    option-label="label"
+                                    dropdown
+                                    fluid
+                                    placeholder="Quick search medicine by name, potency (e.g. 200C), or size (e.g. 30ml) to add..."
+                                    @complete="searchQuickFill"
+                                    @option-select="onQuickAddMedicineSelected"
+                                >
+                                    <template #option="slotProps">
+                                        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 0.75rem;">
+                                            <span style="font-weight: 700; font-size: 0.85rem;">{{ slotProps.option.label }}</span>
+                                            <Tag
+                                                v-if="slotProps.option.stock !== undefined"
+                                                :value="`Stock: ${slotProps.option.stock}`"
+                                                :severity="slotProps.option.stock <= 0 ? 'danger' : slotProps.option.stock < 10 ? 'warn' : 'success'"
+                                            />
+                                        </div>
+                                    </template>
+                                </AutoComplete>
                             </div>
 
                             <div v-if="form.medicines.length === 0" class="no-medicines-alert">
@@ -1033,6 +1091,8 @@ function submitForm(): void {
 .medicine-table-container {
     overflow-x: auto;
     border: 1px solid var(--surface-border);
+    border-radius: 10px !important;
+    background: var(--surface-card);
 }
 
 .medicine-edit-table {
@@ -1041,16 +1101,35 @@ function submitForm(): void {
 }
 
 .medicine-edit-table th, .medicine-edit-table td {
-    padding: 0.75rem;
+    padding: 0.85rem 1rem;
     text-align: left;
     border-bottom: 1px solid var(--surface-border);
+    vertical-align: middle;
+}
+
+.medicine-edit-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.medicine-edit-table tbody tr:hover {
+    background: color-mix(in srgb, var(--surface-hover) 70%, var(--surface-card));
 }
 
 .medicine-edit-table th {
-    background: var(--surface-100);
+    background: color-mix(in srgb, var(--surface-50) 80%, var(--surface-card));
     font-weight: 700;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     color: var(--text-color-secondary);
+}
+
+.medicine-edit-table :deep(.p-button),
+.history-meds-table :deep(.p-button),
+.prescription-editor-header :deep(.p-button),
+.history-record-header :deep(.p-button) {
+    width: auto !important;
+    white-space: nowrap;
 }
 
 .inventory-select {

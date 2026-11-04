@@ -69,7 +69,11 @@ class BookingSettingController extends Controller
         ])->validate();
 
         $settings = BookingSetting::current();
-        $settings->fill($validated);
+        $settings->fill([
+            ...$validated,
+            'clinic_closures' => array_values($validated['clinic_closures'] ?? []),
+            'closed_days' => array_values(array_map('intval', $validated['closed_days'] ?? [])),
+        ]);
         $settings->save();
 
         try {

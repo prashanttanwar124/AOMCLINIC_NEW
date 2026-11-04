@@ -1,9 +1,9 @@
 <?php
 
+use App\Models\Appointment;
+use App\Models\CourierParcel;
 use App\Models\Patient;
 use App\Models\User;
-use App\Models\CourierParcel;
-use App\Models\Appointment;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guest users are redirected to login from courier parcels', function () {
@@ -13,7 +13,7 @@ test('guest users are redirected to login from courier parcels', function () {
 test('authenticated staff can view courier parcels list with options', function () {
     $user = User::factory()->create();
     $patient = Patient::factory()->create(['name' => 'John Doe']);
-    
+
     CourierParcel::create([
         'patient_id' => $patient->id,
         'parcel_status' => 'order_received',
@@ -33,13 +33,19 @@ test('authenticated staff can view courier parcels list with options', function 
             ->has('parcels.data', 1)
             ->where('parcels.data.0.patient_name', 'John Doe')
             ->where('parcels.data.0.parcel_status', 'order_received')
+            ->where('summary.total', 1)
+            ->where('summary.in_progress', 1)
+            ->where('summary.unpaid_count', 1)
             ->has('medicinesInventory')
         );
 });
 
-test('authenticated staff can create a courier parcel', function () {
+test('authenticated staff can create a courier parcel with complaints, prescription days, and automatic address fallback', function () {
     $user = User::factory()->create();
-    $patient = Patient::factory()->create();
+    $patient = Patient::factory()->create([
+        'address' => '45B Rose Garden',
+        'city' => 'Mumbai',
+    ]);
 
     $payload = [
         'patient_id' => $patient->id,
@@ -48,7 +54,9 @@ test('authenticated staff can create a courier parcel', function () {
         'amount' => 150.00,
         'payment_status' => 'paid',
         'medicines' => ['BELLADONNA | 30C'],
-        'address' => 'New Address',
+        'complaints' => 'Chronic sinus headache and sneezing',
+        'days_prescription' => 15,
+        'address' => '',
         'notes' => 'Needs fast shipping',
     ];
 
@@ -63,14 +71,16 @@ test('authenticated staff can create a courier parcel', function () {
         ->and($parcel->amount)->toBe('150.00')
         ->and($parcel->payment_status)->toBe('paid')
         ->and($parcel->medicines)->toBe(['BELLADONNA | 30C'])
-        ->and($parcel->address)->toBe('New Address')
+        ->and($parcel->complaints)->toBe('Chronic sinus headache and sneezing')
+        ->and($parcel->days_prescription)->toBe(15)
+        ->and($parcel->address)->toBe('45B Rose Garden, Mumbai')
         ->and($parcel->notes)->toBe('Needs fast shipping');
 });
 
 test('authenticated staff can update a courier parcel', function () {
     $user = User::factory()->create();
     $patient = Patient::factory()->create();
-    
+
     $parcel = CourierParcel::create([
         'patient_id' => $patient->id,
         'parcel_status' => 'order_received',
@@ -114,7 +124,7 @@ test('authenticated staff can update a courier parcel', function () {
 test('authenticated staff can delete a courier parcel', function () {
     $user = User::factory()->create();
     $patient = Patient::factory()->create();
-    
+
     $parcel = CourierParcel::create([
         'patient_id' => $patient->id,
         'parcel_status' => 'order_received',
@@ -170,8 +180,8 @@ test('authenticated staff can view patient consolidated history timeline', funct
         ->assertJsonStructure([
             'patient' => ['id', 'name', 'email', 'phone'],
             'timeline' => [
-                '*' => ['type', 'id', 'date', 'title', 'medicines']
-            ]
+                '*' => ['type', 'id', 'date', 'title', 'medicines'],
+            ],
         ]);
 
     $data = $response->json();
@@ -181,4 +191,3 @@ test('authenticated staff can view patient consolidated history timeline', funct
         ->and($data['timeline'][1]['type'])->toBe('appointment')
         ->and($data['timeline'][1]['complaint'])->toBe('Fever and cold');
 });
-

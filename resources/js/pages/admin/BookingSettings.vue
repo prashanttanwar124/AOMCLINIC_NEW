@@ -80,7 +80,7 @@ function toggleClosedDay(dayValue: number) {
 }
 
 const newClosureDate = ref<Date | string | null>(null);
-const newClosureSlots = ref<string[]>([]);
+const newClosureSlots = ref<string[]>(['Morning', 'Evening']);
 
 function parseTimeToDate(timeStr: string | null): Date | null {
     if (!timeStr) {
@@ -193,7 +193,7 @@ function addClosure() {
     form.clinic_closures = closures;
 
     newClosureDate.value = null;
-    newClosureSlots.value = [];
+    newClosureSlots.value = ['Morning', 'Evening'];
 }
 
 function removeClosure(index: number) {
@@ -201,6 +201,13 @@ function removeClosure(index: number) {
 }
 
 function submitSettings() {
+    if (newClosureDate.value) {
+        if (newClosureSlots.value.length === 0) {
+            newClosureSlots.value = ['Morning', 'Evening'];
+        }
+        addClosure();
+    }
+
     form.patch(bookingSettings().url, {
         preserveScroll: true,
     });

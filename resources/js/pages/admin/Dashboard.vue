@@ -1,110 +1,110 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { useEchoPublic } from '@laravel/echo-vue';
+import Chart from 'primevue/chart';
+import Tag from 'primevue/tag';
 import { computed, ref } from 'vue';
 import { booking, dashboard } from '@/routes';
-import { edit as editAppearance } from '@/routes/appearance';
-import { edit as editProfile } from '@/routes/profile';
+import {
+    appointments,
+    medicines,
+    medicineTracking,
+    patients,
+    vitalsTracking,
+} from '@/routes/admin';
 
-const props = defineProps<{
-    referenceDate: string;
-    referenceDateLabel: string;
-    stats: {
-        todayAppointments: number;
-        todayCompleted: number;
-        frontDeskLoad: number;
-        ratingScore: number;
-        satisfactionPercentage: number;
-        referenceDateRevenue: number;
-        revenueGrowthPercent: number;
-        retentionRate: number;
-    };
-    chartData: Array<{
-        label: string;
-        revenue: number;
-        appointments: number;
-    }>;
-    analyticsSummary: {
-        weeklyRevenueTotal: number;
-        weeklyAppointmentsTotal: number;
-        dailyRevenueAverage: number;
-        dailyAppointmentsAverage: number;
-        peakRevenue: number;
-        peakRevenueDay: string;
-        peakAppointments: number;
-        peakAppointmentsDay: string;
-    };
-}>();
+type ChartPoint = {
+    label: string;
+    shortDay?: string;
+    revenue: number;
+    appointments: number;
+    morning?: number;
+    evening?: number;
+};
 
-const activeTab = ref<'revenue' | 'appointments'>('revenue');
-const hoveredIndex = ref<number | null>(null);
+type PaymentRow = {
+    method: string;
+    count: number;
+    amount: number;
+};
 
-const computedPoints = computed(() => {
-    const values = props.chartData.map((d) => activeTab.value === 'revenue' ? d.revenue : d.appointments);
-    const maxVal = Math.max(...values) * 1.15; // 15% top padding
-    const minVal = 0;
-    
-    const width = 500;
-    const height = 200;
-    const paddingX = 40;
-    const paddingY = 25;
-    
-    const drawWidth = width - paddingX * 2;
-    const drawHeight = height - paddingY * 2;
-    
-    return props.chartData.map((d, index) => {
-        const val = activeTab.value === 'revenue' ? d.revenue : d.appointments;
-        const x = paddingX + (index * (drawWidth / (props.chartData.length - 1)));
-        const y = (height - paddingY) - ((val - minVal) / (maxVal - minVal)) * drawHeight;
-        
-        return { x, y, val, label: d.label };
-    });
-});
+type LowStockItem = {
+    id: number;
+    name: string;
+    category: string | null;
+    size: string | null;
+    quantity: number;
+};
 
-const linePath = computed(() => {
-    const points = computedPoints.value;
-    if (points.length === 0) {
-        return '';
-    }
-    
-    return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-});
+type RecentAppointmentItem = {
+    id: number;
+    token: string | null;
+    patientName: string;
+    session: string;
+    type: string;
+    status: string;
+    amount: number | null;
+};
 
-const fillPath = computed(() => {
-    const points = computedPoints.value;
-    if (points.length === 0) {
-        return '';
-    }
-    const first = points[0];
-    const last = points[points.length - 1];
-    
-    const height = 200;
-    const paddingY = 25;
-    const bottomY = height - paddingY;
-    
-    return `M ${first.x} ${bottomY} ` + 
-           points.map((p) => `L ${p.x} ${p.y}`).join(' ') + 
-           ` L ${last.x} ${bottomY} Z`;
-});
-
-const yTicks = computed(() => {
-    const values = props.chartData.map((d) => activeTab.value === 'revenue' ? d.revenue : d.appointments);
-    const maxVal = Math.max(...values);
-    
-    return [
-        Math.round(maxVal),
-        Math.round(maxVal * 0.66),
-        Math.round(maxVal * 0.33),
-        0
-    ];
-});
-
-function formatNumber(num: number): string {
-    if (num >= 1000) {
-        return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-    }
-    
-    return num.toString();
-}
+const props = withDefaults(
+    defineProps<{
+        referenceDate: string;
+        referenceDateLabel: string;
+        stats: {
+            todayAppointments: number;
+            todayCompleted: number;
+            frontDeskLoad: number;
+            ratingScore: number;
+            satisfactionPercentage: number;
+            referenceDateRevenue: number;
+            revenueGrowthPercent: number;
+            retentionRate: number;
+            totalPatients?: number;
+            pendingDispense?: number;
+        };
+        chartData: ChartPoint[];
+        analyticsSummary: {
+            weeklyRevenueTotal: number;
+            weeklyAppointmentsTotal: number;
+            dailyRevenueAverage: number;
+            dailyAppointmentsAverage: number;
+            peakRevenue: number;
+            peakRevenueDay: string;
+            peakAppointments: number;
+            peakAppointmentsDay: string;
+        };
+        sessionSplit?: {
+            morning: number;
+            evening: number;
+        };
+        visitTypeSplit?: {
+            newVisits: number;
+            followUpVisits: number;
+        };
+        paymentBreakdown?: PaymentRow[];
+        queueBreakdown?: {
+            pending: number;
+            onHold: number;
+            completed: number;
+            pendingDispense: number;
+        };
+        lowStockMedicines?: LowStockItem[];
+        recentAppointments?: RecentAppointmentItem[];
+    }>(),
+    {
+        sessionSplit: () => ({ morning: 0, evening: 0 }),
+        visitTypeSplit: () => ({ newVisits: 0, followUpVisits: 0 }),
+        paymentBreakdown: () => [],
+        queueBreakdown: () => ({
+            pending: 0,
+            onHold: 0,
+            completed: 0,
+            pendingDispense: 0,
+        }),
+        lowStockMedicines: () => [],
+        recentAppointments: () => [],
+    },
+);
 
 defineOptions({
     layout: {
@@ -117,115 +117,303 @@ defineOptions({
     },
 });
 
+useEchoPublic('live-queue', 'QueueUpdated', () => {
+    router.reload({
+        only: [
+            'stats',
+            'chartData',
+            'analyticsSummary',
+            'sessionSplit',
+            'visitTypeSplit',
+            'paymentBreakdown',
+            'queueBreakdown',
+            'lowStockMedicines',
+            'recentAppointments',
+        ],
+    });
+});
+
+const activeTab = ref<'revenue' | 'appointments'>('revenue');
+
+function formatNumber(num: number): string {
+    if (num >= 100000) {
+        return (num / 100000).toFixed(1).replace(/\.0$/, '') + 'L';
+    }
+    if (num >= 1000) {
+        return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    }
+    return num.toString();
+}
+
 const heroStats = computed(() => [
     {
         label: 'Today appointments',
         value: props.stats.todayAppointments.toString(),
         valueSuffix: '',
-        note: `${props.stats.todayCompleted} completed check-ins`,
+        note: `Active date: ${props.referenceDateLabel}`,
         icon: 'pi pi-calendar',
-        iconColor: 'var(--primary-color)',
-        railColor: 'var(--primary-color)',
-        cardClass: 'appointment-card',
-        badgeText: 'Active',
+        iconColor: '#3b82f6',
+        railColor: '#3b82f6',
+        badgeText: `${props.stats.todayCompleted} done`,
         badgeSeverity: 'info',
-        badgeIcon: '',
     },
     {
-        label: 'Front desk load',
+        label: 'Live queue load',
         value: props.stats.frontDeskLoad.toString().padStart(2, '0'),
         valueSuffix: '',
-        note: 'Waiting/Hold items in backlog',
+        note: `${props.queueBreakdown.onHold} on hold · ${props.queueBreakdown.pendingDispense} at pharmacy`,
         icon: 'pi pi-clock',
-        iconColor: 'var(--p-orange-500)',
-        railColor: 'var(--p-orange-500)',
-        cardClass: 'load-card',
-        badgeText: props.stats.frontDeskLoad > 0 ? 'Action required' : 'Clear',
+        iconColor: '#f59e0b',
+        railColor: '#f59e0b',
+        badgeText:
+            props.stats.frontDeskLoad > 0 ? 'Active queue' : 'All clear',
         badgeSeverity: props.stats.frontDeskLoad > 0 ? 'warning' : 'success',
-        badgeIcon: '',
     },
     {
         label: 'Revenue pulse',
         value: `₹${formatNumber(props.stats.referenceDateRevenue)}`,
         valueSuffix: '',
-        note: `Target day: ${props.referenceDateLabel}`,
+        note: `₹${formatNumber(props.analyticsSummary.dailyRevenueAverage)} daily average`,
         icon: 'pi pi-indian-rupee',
-        iconColor: 'var(--p-green-500)',
-        railColor: 'var(--p-green-500)',
-        cardClass: 'revenue-card',
+        iconColor: '#10b981',
+        railColor: '#10b981',
         badgeText: `${props.stats.revenueGrowthPercent >= 0 ? '+' : ''}${props.stats.revenueGrowthPercent}%`,
-        badgeSeverity: props.stats.revenueGrowthPercent >= 0 ? 'success' : 'warning',
-        badgeIcon: props.stats.revenueGrowthPercent >= 0 ? 'pi pi-arrow-up-right' : 'pi pi-arrow-down-left',
+        badgeSeverity:
+            props.stats.revenueGrowthPercent >= 0 ? 'success' : 'warning',
     },
     {
-        label: 'Patient rating',
-        value: props.stats.ratingScore.toFixed(1),
-        valueSuffix: '/5',
-        note: `${props.stats.retentionRate}% patient retention rate`,
-        icon: 'pi pi-star-fill',
-        iconColor: 'var(--p-cyan-500)',
-        railColor: 'var(--p-cyan-500)',
-        cardClass: 'rating-card',
-        badgeText: props.stats.ratingScore >= 4.5 ? 'Excellent' : 'Good',
+        label: 'Patient retention',
+        value: `${props.stats.retentionRate}%`,
+        valueSuffix: '',
+        note: `${props.stats.totalPatients ?? 0} total registered patients`,
+        icon: 'pi pi-users',
+        iconColor: '#06b6d4',
+        railColor: '#06b6d4',
+        badgeText: `${props.stats.ratingScore.toFixed(1)}★ score`,
         badgeSeverity: 'cyan',
-        badgeIcon: '',
     },
 ]);
 
-const timeline = [
-    {
-        time: '09:15',
-        title: 'Morning queue opened',
-        detail: 'Front desk released 24 new slots for same-day bookings.',
-    },
-    {
-        time: '10:00',
-        title: 'Staff review block',
-        detail: 'Three appointment edits still need admin confirmation.',
-    },
-    {
-        time: '11:30',
-        title: 'Follow-up calls',
-        detail: 'Team scheduled callbacks for pending lab review patients.',
-    },
-];
+// 1. Main Trend Chart (Line for Revenue, Grouped Bar for Appointments)
+const mainChartData = computed(() => {
+    const labels = props.chartData.map((d) => d.label);
 
-const focusCards = [
-    {
-        title: 'Booking desk',
-        value: '15 pending',
-        note: 'Same-day demand still high across morning sessions.',
-    },
-    {
-        title: 'Care coordination',
-        value: '08 tasks',
-        note: 'Prescription and callback work stacked for noon handoff.',
-    },
-    {
-        title: 'Staff coverage',
-        value: 'Full team',
-        note: 'No shift gaps reported for afternoon clinic operations.',
-    },
-];
+    if (activeTab.value === 'revenue') {
+        return {
+            labels,
+            datasets: [
+                {
+                    label: 'Daily Revenue (₹)',
+                    data: props.chartData.map((d) => d.revenue),
+                    fill: true,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.14)',
+                    pointBackgroundColor: '#3b82f6',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    tension: 0.35,
+                },
+            ],
+        };
+    }
 
-const quickActions = [
+    return {
+        labels,
+        datasets: [
+            {
+                label: 'Morning Session',
+                backgroundColor: '#3b82f6',
+                borderRadius: 6,
+                data: props.chartData.map(
+                    (d) => d.morning ?? Math.ceil(d.appointments / 2),
+                ),
+            },
+            {
+                label: 'Evening Session',
+                backgroundColor: '#06b6d4',
+                borderRadius: 6,
+                data: props.chartData.map(
+                    (d) => d.evening ?? Math.floor(d.appointments / 2),
+                ),
+            },
+        ],
+    };
+});
+
+const mainChartOptions = computed(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+        mode: 'index',
+        intersect: false,
+    },
+    plugins: {
+        legend: {
+            display: activeTab.value === 'appointments',
+            position: 'top',
+            labels: {
+                usePointStyle: true,
+                boxWidth: 8,
+                font: { size: 12, weight: '600' },
+            },
+        },
+        tooltip: {
+            backgroundColor: '#0f172a',
+            padding: 10,
+            cornerRadius: 8,
+        },
+    },
+    scales: {
+        x: {
+            grid: { display: false },
+            ticks: { font: { size: 12, weight: '600' } },
+        },
+        y: {
+            beginAtZero: true,
+            grid: {
+                color: 'rgba(148, 163, 184, 0.15)',
+            },
+            ticks: {
+                font: { size: 11 },
+                callback: (value: number) =>
+                    activeTab.value === 'revenue'
+                        ? `₹${formatNumber(Number(value))}`
+                        : value,
+            },
+        },
+    },
+}));
+
+// 2. Queue Status Breakdown Horizontal Bar / Doughnut
+const queueChartData = computed(() => ({
+    labels: ['Waiting', 'On Hold', 'At Pharmacy', 'Completed'],
+    datasets: [
+        {
+            data: [
+                props.queueBreakdown.pending,
+                props.queueBreakdown.onHold,
+                props.queueBreakdown.pendingDispense,
+                props.queueBreakdown.completed,
+            ],
+            backgroundColor: ['#3b82f6', '#f59e0b', '#8b5cf6', '#10b981'],
+            borderWidth: 0,
+            hoverOffset: 6,
+        },
+    ],
+}));
+
+// 3. Session & Visit Mix Doughnut
+const mixChartData = computed(() => ({
+    labels: ['Morning', 'Evening', 'New Visits', 'Follow-Up'],
+    datasets: [
+        {
+            data: [
+                props.sessionSplit.morning,
+                props.sessionSplit.evening,
+                props.visitTypeSplit.newVisits,
+                props.visitTypeSplit.followUpVisits,
+            ],
+            backgroundColor: ['#3b82f6', '#06b6d4', '#10b981', '#6366f1'],
+            borderWidth: 0,
+            hoverOffset: 6,
+        },
+    ],
+}));
+
+const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '66%',
+    plugins: {
+        legend: {
+            position: 'bottom',
+            labels: {
+                usePointStyle: true,
+                boxWidth: 8,
+                padding: 14,
+                font: { size: 11, weight: '600' },
+            },
+        },
+    },
+};
+
+// 4. Payment Methods Bar Chart
+const paymentChartData = computed(() => {
+    const rows =
+        props.paymentBreakdown.length > 0
+            ? props.paymentBreakdown
+            : [
+                  { method: 'Cash', amount: 0, count: 0 },
+                  { method: 'Online', amount: 0, count: 0 },
+              ];
+
+    return {
+        labels: rows.map((r) => r.method),
+        datasets: [
+            {
+                label: 'Revenue (₹)',
+                data: rows.map((r) => r.amount),
+                backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6'],
+                borderRadius: 6,
+                barThickness: 26,
+            },
+        ],
+    };
+});
+
+const paymentChartOptions = {
+    indexAxis: 'y' as const,
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+        legend: { display: false },
+    },
+    scales: {
+        x: {
+            beginAtZero: true,
+            grid: { color: 'rgba(148, 163, 184, 0.14)' },
+            ticks: {
+                font: { size: 11 },
+                callback: (v: number) => `₹${formatNumber(Number(v))}`,
+            },
+        },
+        y: {
+            grid: { display: false },
+            ticks: { font: { size: 12, weight: '600' } },
+        },
+    },
+};
+
+const quickShortcuts = [
     {
-        label: 'Open booking desk',
-        note: 'Create or review admin bookings.',
+        label: 'Booking Desk',
+        desc: 'Live queue & consultations',
         href: booking().url,
-        icon: 'pi pi-calendar-plus',
+        icon: 'pi pi-desktop',
+        color: '#3b82f6',
     },
     {
-        label: 'Review profile',
-        note: 'Update staff account and contact details.',
-        href: editProfile().url,
-        icon: 'pi pi-user-edit',
+        label: 'Vitals Tracking',
+        desc: 'Record BP, SpO2 & weight',
+        href: vitalsTracking().url,
+        icon: 'pi pi-wave-pulse',
+        color: '#10b981',
     },
     {
-        label: 'Tune appearance',
-        note: 'Adjust workspace presentation settings.',
-        href: editAppearance().url,
-        icon: 'pi pi-palette',
+        label: 'Medicine Dispatch',
+        desc: 'Pharmacy & billing queue',
+        href: medicineTracking().url,
+        icon: 'pi pi-box',
+        color: '#8b5cf6',
+    },
+    {
+        label: 'Patient Registry',
+        desc: 'Search & manage records',
+        href: patients().url,
+        icon: 'pi pi-users',
+        color: '#06b6d4',
     },
 ];
 </script>
@@ -234,440 +422,394 @@ const quickActions = [
     <Head title="Dashboard" />
 
     <div class="page-grid admin-dashboard-page">
-        <!-- Admin Hero Page Card -->
-        <section class="admin-hero page-card admin-dashboard-hero">
-            <div class="admin-hero__copy admin-dashboard-hero__copy">
-                <p class="stat-label admin-dashboard-hero__eyebrow">
-                    Operations overview
-                </p>
-                <h2 class="admin-hero__title admin-dashboard-hero__title">
-                    Keep front desk, scheduling, and patient flow moving.
+        <!-- Top Shortcut & Overview Header -->
+        <section class="page-card dashboard-top-bar">
+            <div class="dashboard-top-bar__copy">
+                <span class="dashboard-eyebrow">Clinic Command Center</span>
+                <h2 class="dashboard-main-title">
+                    Operations & Analytics Overview
                 </h2>
-                <p class="panel-subtitle admin-dashboard-hero__subtitle">
-                    This admin dashboard is tuned for fast triage, live
-                    scheduling decisions, and staff handoff visibility.
-                </p>
             </div>
 
-            <div class="admin-hero__actions admin-dashboard-hero__actions">
+            <div class="dashboard-shortcuts">
                 <Link
-                    :href="booking().url"
-                    class="admin-dashboard-hero__action-link"
+                    v-for="item in quickShortcuts"
+                    :key="item.label"
+                    :href="item.href"
+                    class="shortcut-pill"
                 >
-                    <button
-                        class="admin-cta admin-cta--primary admin-dashboard-hero__button"
+                    <span
+                        class="shortcut-pill__icon"
+                        :style="{
+                            background: `color-mix(in srgb, ${item.color} 14%, transparent)`,
+                            color: item.color,
+                        }"
                     >
-                        <i class="pi pi-calendar-plus"></i>
-                        <span>New booking</span>
-                    </button>
-                </Link>
-
-                <Link
-                    :href="dashboard().url"
-                    class="admin-dashboard-hero__action-link"
-                >
-                    <button class="admin-cta admin-dashboard-hero__button">
-                        <i class="pi pi-chart-bar"></i>
-                        <span>Refresh view</span>
-                    </button>
+                        <i :class="item.icon" />
+                    </span>
+                    <span class="shortcut-pill__text">
+                        <strong>{{ item.label }}</strong>
+                        <small>{{ item.desc }}</small>
+                    </span>
                 </Link>
             </div>
         </section>
 
-        <!-- Stats Grid -->
+        <!-- 4 KPI Stat Cards -->
         <section class="admin-dashboard-stats-grid">
             <article
                 v-for="stat in heroStats"
                 :key="stat.label"
                 class="stat-card admin-dashboard-stat-card"
-                :class="stat.cardClass"
             >
-                <div class="admin-dashboard-stat-card__rail" :style="{ background: stat.railColor }"></div>
+                <div
+                    class="admin-dashboard-stat-card__rail"
+                    :style="{ background: stat.railColor }"
+                />
                 <div class="stat-card-header">
-                    <p class="stat-label admin-dashboard-stat-card__label">
-                        {{ stat.label }}
-                    </p>
-                    <div class="stat-icon-wrapper" :style="{ background: `color-mix(in srgb, ${stat.iconColor} 12%, transparent)`, color: stat.iconColor }">
-                        <i :class="stat.icon" class="stat-card-icon"></i>
+                    <p class="stat-label">{{ stat.label }}</p>
+                    <div
+                        class="stat-icon-wrapper"
+                        :style="{
+                            background: `color-mix(in srgb, ${stat.iconColor} 12%, transparent)`,
+                            color: stat.iconColor,
+                        }"
+                    >
+                        <i :class="stat.icon" />
                     </div>
                 </div>
+
                 <div class="stat-value-container">
-                    <h2 class="stat-value admin-dashboard-stat-card__value">
-                        {{ stat.value }}<span v-if="stat.valueSuffix" class="stat-value-small">{{ stat.valueSuffix }}</span>
+                    <h2 class="stat-value">
+                        {{ stat.value }}
                     </h2>
-                    <span v-if="stat.badgeText" :class="['stat-badge', `stat-badge--${stat.badgeSeverity}`]">
-                        <i v-if="stat.badgeIcon" :class="stat.badgeIcon" class="mr-1"></i>
+                    <span
+                        :class="[
+                            'stat-badge',
+                            `stat-badge--${stat.badgeSeverity}`,
+                        ]"
+                    >
                         {{ stat.badgeText }}
                     </span>
                 </div>
-                
-                <div class="stat-visual-container">
-                    <template v-if="stat.label === 'Today appointments'">
-                        <div class="stat-progress-bar-bg">
-                            <div class="stat-progress-bar-fill" :style="{ width: (props.stats.todayAppointments > 0 ? (props.stats.todayCompleted / props.stats.todayAppointments) * 100 : 0) + '%', background: 'var(--primary-color)' }"></div>
-                        </div>
-                        <span class="stat-progress-text">{{ props.stats.todayCompleted }}/{{ props.stats.todayAppointments }} in</span>
-                    </template>
-                    <template v-else-if="stat.label === 'Front desk load'">
-                        <span class="stat-metric-pill" :style="{ background: props.stats.frontDeskLoad > 0 ? 'color-mix(in srgb, var(--p-orange-500) 10%, transparent)' : 'color-mix(in srgb, var(--p-green-500) 10%, transparent)', color: props.stats.frontDeskLoad > 0 ? 'var(--p-orange-500)' : 'var(--p-green-500)' }">
-                            <i class="pi pi-check-circle mr-1" v-if="props.stats.frontDeskLoad === 0"></i>
-                            <i class="pi pi-exclamation-circle mr-1" v-else></i>
-                            {{ props.stats.frontDeskLoad === 0 ? 'All caught up' : `${props.stats.frontDeskLoad} pending tasks` }}
-                        </span>
-                    </template>
-                    <template v-else-if="stat.label === 'Revenue pulse'">
-                        <div class="mini-sparkline">
-                            <span class="spark-dot"></span>
-                            <span class="spark-text">₹{{ formatNumber(props.analyticsSummary.dailyRevenueAverage) }} avg active day</span>
-                        </div>
-                    </template>
-                    <template v-else-if="stat.label === 'Patient rating'">
-                        <div class="stars-row">
-                            <i class="pi pi-star-fill star-active" v-for="i in Math.round(props.stats.ratingScore)" :key="i"></i>
-                            <i class="pi pi-star star-inactive" v-for="i in (5 - Math.round(props.stats.ratingScore))" :key="i + 5"></i>
-                            <span class="stars-label ml-1">{{ props.stats.satisfactionPercentage }}% positive</span>
-                        </div>
-                    </template>
-                </div>
 
-                <p class="stat-note admin-dashboard-stat-card__note">
-                    {{ stat.note }}
-                </p>
+                <p class="stat-note">{{ stat.note }}</p>
             </article>
         </section>
 
-        <!-- Dashboard Split Columns -->
-        <section class="admin-dashboard-content-grid">
-            <!-- Left Column: Analytics & Clinic Timeline -->
-            <div class="admin-dashboard-main-column">
-                <!-- Analytics Card -->
-                <article class="page-card admin-dashboard-panel admin-analytics-card">
-                    <div class="admin-section-header admin-dashboard-section-header">
-                        <div>
-                            <h3 class="panel-title admin-dashboard-section-title">
-                                Clinic Analytics
-                            </h3>
-                            <p class="panel-subtitle admin-dashboard-section-copy">
-                                Daily performance metrics showing revenue and appointment loads.
-                            </p>
-                        </div>
-
-                        <div class="analytics-tabs">
-                            <button
-                                type="button"
-                                class="analytics-tab-btn"
-                                :class="{ 'is-active': activeTab === 'revenue' }"
-                                @click="activeTab = 'revenue'"
-                            >
-                                <i class="pi pi-indian-rupee mr-1"></i> Revenue
-                            </button>
-                            <button
-                                type="button"
-                                class="analytics-tab-btn"
-                                :class="{ 'is-active': activeTab === 'appointments' }"
-                                @click="activeTab = 'appointments'"
-                            >
-                                <i class="pi pi-calendar mr-1"></i> Appointments
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="analytics-summary-row">
-                        <div class="analytics-summary-item">
-                            <span class="stat-label">Weekly Total</span>
-                            <strong class="analytics-summary-value">
-                                {{ activeTab === 'revenue' ? '₹' + formatNumber(props.analyticsSummary.weeklyRevenueTotal) : props.analyticsSummary.weeklyAppointmentsTotal }}
-                            </strong>
-                            <span class="analytics-summary-trend positive">
-                                <i class="pi pi-arrow-up-right"></i> +12.4%
-                            </span>
-                        </div>
-                        <div class="analytics-summary-item">
-                            <span class="stat-label">Daily Average</span>
-                            <strong class="analytics-summary-value">
-                                {{ activeTab === 'revenue' ? '₹' + formatNumber(props.analyticsSummary.dailyRevenueAverage) : props.analyticsSummary.dailyAppointmentsAverage }}
-                            </strong>
-                            <span class="analytics-summary-trend positive">
-                                <i class="pi pi-arrow-up-right"></i> +8.1%
-                            </span>
-                        </div>
-                        <div class="analytics-summary-item">
-                            <span class="stat-label">Peak Performance</span>
-                            <strong class="analytics-summary-value">
-                                {{ activeTab === 'revenue' ? '₹' + formatNumber(props.analyticsSummary.peakRevenue) + ' (' + props.analyticsSummary.peakRevenueDay + ')' : props.analyticsSummary.peakAppointments + ' (' + props.analyticsSummary.peakAppointmentsDay + ')' }}
-                            </strong>
-                        </div>
-                    </div>
-
-                    <div class="chart-container">
-                        <svg viewBox="0 0 500 200" width="100%" height="100%" class="analytics-svg-chart">
-                            <defs>
-                                <!-- Area Gradient -->
-                                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stop-color="var(--primary-color)" stop-opacity="0.25" />
-                                    <stop offset="100%" stop-color="var(--primary-color)" stop-opacity="0.00" />
-                                </linearGradient>
-                                <!-- Bar Gradient -->
-                                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stop-color="var(--primary-color)" />
-                                    <stop offset="100%" stop-color="color-mix(in srgb, var(--primary-color) 40%, transparent)" />
-                                </linearGradient>
-                            </defs>
-
-                            <!-- Horizontal Grid Lines -->
-                            <line
-                                v-for="y in [25, 75, 125, 175]"
-                                :key="y"
-                                x1="40"
-                                :y1="y"
-                                x2="475"
-                                :y2="y"
-                                stroke="var(--surface-border)"
-                                stroke-width="1"
-                                stroke-dasharray="3 3"
-                            />
-
-                            <!-- Y Axis Ticks -->
-                            <text
-                                v-for="(tick, idx) in yTicks"
-                                :key="idx"
-                                x="32"
-                                :y="[25, 75, 125, 175][idx] + 3"
-                                text-anchor="end"
-                                font-size="9"
-                                fill="var(--text-secondary-color)"
-                                font-weight="600"
-                            >
-                                {{ activeTab === 'revenue' ? '₹' + formatNumber(tick) : tick }}
-                            </text>
-
-                            <!-- Area under Line (Revenue only) -->
-                            <path
-                                v-if="activeTab === 'revenue' && fillPath"
-                                :d="fillPath"
-                                fill="url(#areaGrad)"
-                                class="chart-area-path"
-                            />
-
-                            <!-- Line path (Revenue only) -->
-                            <path
-                                v-if="activeTab === 'revenue' && linePath"
-                                :d="linePath"
-                                fill="none"
-                                stroke="var(--primary-color)"
-                                stroke-width="3"
-                                stroke-linejoin="round"
-                                stroke-linecap="round"
-                                class="chart-line-path"
-                            />
-
-                            <!-- Bar Chart (Appointments only) -->
-                            <g v-if="activeTab === 'appointments'">
-                                <rect
-                                    v-for="(p, index) in computedPoints"
-                                    :key="index"
-                                    :x="p.x - 12"
-                                    :y="p.y"
-                                    width="24"
-                                    :height="175 - p.y"
-                                    rx="4"
-                                    fill="url(#barGradient)"
-                                    class="chart-bar-rect"
-                                    @mouseenter="hoveredIndex = index"
-                                    @mouseleave="hoveredIndex = null"
-                                />
-                            </g>
-
-                            <!-- Interactive circles (Revenue only) -->
-                            <g v-if="activeTab === 'revenue'">
-                                <circle
-                                    v-for="(p, index) in computedPoints"
-                                    :key="index"
-                                    :cx="p.x"
-                                    :cy="p.y"
-                                    :r="hoveredIndex === index ? 6 : 4"
-                                    :fill="hoveredIndex === index ? 'var(--primary-color)' : 'var(--surface-card)'"
-                                    stroke="var(--primary-color)"
-                                    stroke-width="2.5"
-                                    class="chart-point-circle"
-                                    @mouseenter="hoveredIndex = index"
-                                    @mouseleave="hoveredIndex = null"
-                                />
-                            </g>
-
-                            <!-- X Axis Labels -->
-                            <text
-                                v-for="(p, index) in computedPoints"
-                                :key="index"
-                                :x="p.x"
-                                y="192"
-                                text-anchor="middle"
-                                font-size="9.5"
-                                fill="var(--text-secondary-color)"
-                                font-weight="600"
-                            >
-                                {{ p.label }}
-                            </text>
-
-                            <!-- Tooltip Box (Visible on Hover) -->
-                            <g v-if="hoveredIndex !== null" class="chart-tooltip-group">
-                                <rect
-                                    :x="computedPoints[hoveredIndex].x - 32"
-                                    :y="computedPoints[hoveredIndex].y - 30"
-                                    width="64"
-                                    height="22"
-                                    rx="4"
-                                    fill="var(--surface-card)"
-                                    stroke="var(--surface-border)"
-                                    stroke-width="1.5"
-                                    class="tooltip-bg"
-                                />
-                                <text
-                                    :x="computedPoints[hoveredIndex].x"
-                                    :y="computedPoints[hoveredIndex].y - 15"
-                                    text-anchor="middle"
-                                    font-size="9.5"
-                                    font-weight="700"
-                                    fill="var(--text-color)"
-                                >
-                                    {{ activeTab === 'revenue' ? '₹' + computedPoints[hoveredIndex].val : computedPoints[hoveredIndex].val }}
-                                </text>
-                            </g>
-                        </svg>
-                    </div>
-                </article>
-
-                <!-- Clinic Timeline Card -->
-                <article
-                    class="page-card admin-dashboard-panel admin-dashboard-panel--wide"
-                >
-                    <div
-                        class="admin-section-header admin-dashboard-section-header"
-                    >
-                        <div>
-                            <h3 class="panel-title admin-dashboard-section-title">
-                                Clinic timeline
-                            </h3>
-                            <p class="panel-subtitle admin-dashboard-section-copy">
-                                Key activity blocks for today’s admin workflow.
-                            </p>
-                        </div>
-
-                        <span class="badge-live admin-dashboard-live-badge">
-                            Live
-                        </span>
-                    </div>
-
-                    <div class="admin-timeline admin-dashboard-timeline">
-                        <div
-                            v-for="item in timeline"
-                            :key="item.time"
-                            class="admin-timeline__item admin-dashboard-timeline__item"
-                        >
-                            <div
-                                class="admin-timeline__time admin-dashboard-timeline__time"
-                            >
-                                {{ item.time }}
-                            </div>
-                            <div
-                                class="admin-timeline__content admin-dashboard-timeline__content"
-                            >
-                                <strong class="admin-dashboard-timeline__title">{{
-                                    item.title
-                                }}</strong>
-                                <p class="admin-dashboard-timeline__detail">
-                                    {{ item.detail }}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </article>
-            </div>
-
-            <!-- Right Column: Focus Areas & System Status -->
-            <div class="admin-dashboard-side-column">
-                <article class="page-card admin-dashboard-panel">
-                    <div
-                        class="admin-section-header admin-dashboard-section-header admin-dashboard-section-header--compact"
-                    >
-                        <h3 class="panel-title admin-dashboard-section-title">
-                            Focus areas
+        <!-- Primary Trend Chart + Today's Queue Doughnut -->
+        <section class="primary-analytics-grid">
+            <article class="page-card chart-panel">
+                <div class="chart-panel__header">
+                    <div>
+                        <h3 class="panel-title">
+                            7-Day Revenue & Appointment Trend
                         </h3>
-                        <p class="panel-subtitle admin-dashboard-section-copy">
-                            What deserves attention right now.
+                        <p class="panel-subtitle">
+                            Switch between daily clinic revenue and session-wise
+                            patient volume.
                         </p>
                     </div>
 
-                    <div class="admin-focus-list admin-dashboard-focus-list">
-                        <div
-                            v-for="card in focusCards"
-                            :key="card.title"
-                            class="admin-focus-card admin-dashboard-focus-card"
+                    <div class="analytics-tabs">
+                        <button
+                            type="button"
+                            class="analytics-tab-btn"
+                            :class="{ 'is-active': activeTab === 'revenue' }"
+                            @click="activeTab = 'revenue'"
                         >
-                            <span
-                                class="stat-label admin-dashboard-focus-card__label"
-                                >{{ card.title }}</span
-                            >
-                            <strong
-                                class="stat-value admin-dashboard-focus-card__value"
-                                >{{ card.value }}</strong
-                            >
-                            <p class="admin-dashboard-focus-card__note">
-                                {{ card.note }}
-                            </p>
-                        </div>
+                            <i class="pi pi-indian-rupee" />
+                            <span>Revenue</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="analytics-tab-btn"
+                            :class="{
+                                'is-active': activeTab === 'appointments',
+                            }"
+                            @click="activeTab = 'appointments'"
+                        >
+                            <i class="pi pi-calendar" />
+                            <span>Appointments</span>
+                        </button>
                     </div>
-                </article>
+                </div>
 
-                <article
-                    class="page-card system-card admin-dashboard-system-card"
-                >
-                    <span class="admin-dashboard-system-card__label"
-                        >System status</span
-                    >
-                    <h3 class="panel-title admin-dashboard-system-card__title">
-                        <i
-                            class="pi pi-check-circle admin-dashboard-system-card__icon"
-                        ></i>
-                        <span>All critical services healthy</span>
-                    </h3>
-                    <p class="admin-dashboard-system-card__copy">
-                        Scheduling, profile settings, and core admin shell are
-                        ready for production data wiring.
-                    </p>
-                </article>
-            </div>
+                <div class="analytics-summary-row">
+                    <div class="analytics-summary-item">
+                        <span class="stat-label">7-Day Total</span>
+                        <strong class="analytics-summary-value">
+                            {{
+                                activeTab === 'revenue'
+                                    ? `₹${formatNumber(props.analyticsSummary.weeklyRevenueTotal)}`
+                                    : props.analyticsSummary
+                                          .weeklyAppointmentsTotal
+                            }}
+                        </strong>
+                    </div>
+                    <div class="analytics-summary-item">
+                        <span class="stat-label">Daily Average</span>
+                        <strong class="analytics-summary-value">
+                            {{
+                                activeTab === 'revenue'
+                                    ? `₹${formatNumber(props.analyticsSummary.dailyRevenueAverage)}`
+                                    : props.analyticsSummary
+                                          .dailyAppointmentsAverage
+                            }}
+                        </strong>
+                    </div>
+                    <div class="analytics-summary-item">
+                        <span class="stat-label">Peak Day</span>
+                        <strong class="analytics-summary-value">
+                            {{
+                                activeTab === 'revenue'
+                                    ? `₹${formatNumber(props.analyticsSummary.peakRevenue)} (${props.analyticsSummary.peakRevenueDay})`
+                                    : `${props.analyticsSummary.peakAppointments} visits (${props.analyticsSummary.peakAppointmentsDay})`
+                            }}
+                        </strong>
+                    </div>
+                </div>
+
+                <div class="main-chart-box">
+                    <Chart
+                        :key="activeTab"
+                        :type="activeTab === 'revenue' ? 'line' : 'bar'"
+                        :data="mainChartData"
+                        :options="mainChartOptions"
+                        class="h-full w-full"
+                    />
+                </div>
+            </article>
+
+            <!-- Today's Queue Status Doughnut Chart -->
+            <article class="page-card chart-panel">
+                <div class="chart-panel__header">
+                    <div>
+                        <h3 class="panel-title">Today's Queue Flow</h3>
+                        <p class="panel-subtitle">
+                            Live status for {{ props.referenceDateLabel }}
+                        </p>
+                    </div>
+                    <span class="badge-live">Live</span>
+                </div>
+
+                <div class="doughnut-chart-box">
+                    <Chart
+                        type="doughnut"
+                        :data="queueChartData"
+                        :options="doughnutOptions"
+                        class="h-full w-full"
+                    />
+                </div>
+
+                <div class="mini-Breakdown-grid">
+                    <div class="mini-breakdown-pill">
+                        <span>Waiting</span>
+                        <strong>{{ props.queueBreakdown.pending }}</strong>
+                    </div>
+                    <div class="mini-breakdown-pill">
+                        <span>On Hold</span>
+                        <strong>{{ props.queueBreakdown.onHold }}</strong>
+                    </div>
+                    <div class="mini-breakdown-pill">
+                        <span>Pharmacy</span>
+                        <strong>{{
+                            props.queueBreakdown.pendingDispense
+                        }}</strong>
+                    </div>
+                    <div class="mini-breakdown-pill">
+                        <span>Completed</span>
+                        <strong>{{ props.queueBreakdown.completed }}</strong>
+                    </div>
+                </div>
+            </article>
         </section>
 
-        <!-- Quick Actions -->
-        <section class="page-card admin-dashboard-panel">
-            <div class="admin-section-header admin-dashboard-section-header">
-                <h3 class="panel-title admin-dashboard-section-title">
-                    Quick actions
-                </h3>
-                <p class="panel-subtitle admin-dashboard-section-copy">
-                    Shortcuts for busiest admin tasks.
-                </p>
+        <!-- Secondary Charts + Operational Widgets -->
+        <section class="secondary-analytics-grid">
+            <!-- Session & Visit Mix Doughnut -->
+            <article class="page-card chart-panel">
+                <div class="chart-panel__header">
+                    <div>
+                        <h3 class="panel-title">Session & Visit Mix</h3>
+                        <p class="panel-subtitle">
+                            Morning vs Evening & New vs Follow-Up
+                        </p>
+                    </div>
+                </div>
+
+                <div class="doughnut-chart-box">
+                    <Chart
+                        type="doughnut"
+                        :data="mixChartData"
+                        :options="doughnutOptions"
+                        class="h-full w-full"
+                    />
+                </div>
+            </article>
+
+            <!-- Revenue by Payment Mode Bar Chart -->
+            <article class="page-card chart-panel">
+                <div class="chart-panel__header">
+                    <div>
+                        <h3 class="panel-title">Collections by Payment Mode</h3>
+                        <p class="panel-subtitle">
+                            Breakdown of recorded payments
+                        </p>
+                    </div>
+                </div>
+
+                <div class="doughnut-chart-box">
+                    <Chart
+                        type="bar"
+                        :data="paymentChartData"
+                        :options="paymentChartOptions"
+                        class="h-full w-full"
+                    />
+                </div>
+            </article>
+
+            <!-- Low Stock Pharmacy Alerts & Recent Queue -->
+            <article class="page-card chart-panel">
+                <div class="chart-panel__header">
+                    <div>
+                        <h3 class="panel-title">Low Stock Pharmacy Alerts</h3>
+                        <p class="panel-subtitle">
+                            Medicines with 20 or fewer units left
+                        </p>
+                    </div>
+                    <Link :href="medicines().url" class="panel-link">
+                        Manage Stock →
+                    </Link>
+                </div>
+
+                <div
+                    v-if="props.lowStockMedicines.length > 0"
+                    class="alerts-stack"
+                >
+                    <div
+                        v-for="item in props.lowStockMedicines"
+                        :key="item.id"
+                        class="stock-alert-row"
+                    >
+                        <div class="stock-alert-row__info">
+                            <strong>{{ item.name }}</strong>
+                            <span>
+                                {{
+                                    [item.category, item.size]
+                                        .filter(Boolean)
+                                        .join(' · ') || 'Standard'
+                                }}
+                            </span>
+                        </div>
+                        <Tag
+                            :severity="
+                                item.quantity <= 5 ? 'danger' : 'warn'
+                            "
+                            :value="`${item.quantity} left`"
+                        />
+                    </div>
+                </div>
+                <div v-else class="empty-widget-state">
+                    <i class="pi pi-check-circle" />
+                    <span>All medicine stock levels are healthy.</span>
+                </div>
+            </article>
+        </section>
+
+        <!-- Recent Appointments Table Snapshot -->
+        <section class="page-card admin-table-card recent-appointments-panel">
+            <div class="recent-appointments-header">
+                <div>
+                    <h3 class="panel-title">
+                        Queue Snapshot ({{ props.referenceDateLabel }})
+                    </h3>
+                    <p class="panel-subtitle">
+                        Latest scheduled patients for the active clinic day
+                    </p>
+                </div>
+                <Link :href="appointments().url" class="panel-link">
+                    View All Appointments →
+                </Link>
             </div>
 
-            <div class="admin-dashboard-actions-grid">
-                <Link
-                    v-for="action in quickActions"
-                    :key="action.label"
-                    :href="action.href"
-                    class="admin-action-card admin-dashboard-action-card"
-                >
-                    <i
-                        :class="action.icon"
-                        class="admin-dashboard-action-card__icon"
-                    ></i>
-                    <strong class="admin-dashboard-action-card__title">{{
-                        action.label
-                    }}</strong>
-                    <p class="admin-dashboard-action-card__copy">
-                        {{ action.note }}
-                    </p>
-                </Link>
+            <div
+                v-if="props.recentAppointments.length > 0"
+                class="recent-table-wrap"
+            >
+                <table class="recent-apt-table">
+                    <thead>
+                        <tr>
+                            <th>Token</th>
+                            <th>Patient</th>
+                            <th>Session</th>
+                            <th>Visit Type</th>
+                            <th>Fee</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="apt in props.recentAppointments"
+                            :key="apt.id"
+                        >
+                            <td>
+                                <span class="admin-token-chip">
+                                    #{{ apt.token ?? '-' }}
+                                </span>
+                            </td>
+                            <td>
+                                <strong>{{ apt.patientName }}</strong>
+                            </td>
+                            <td>
+                                <span
+                                    class="admin-session-badge"
+                                    :class="`admin-session-badge--${apt.session.toLowerCase()}`"
+                                >
+                                    <i
+                                        :class="
+                                            apt.session.toLowerCase() ===
+                                            'morning'
+                                                ? 'pi pi-sun'
+                                                : 'pi pi-moon'
+                                        "
+                                    ></i>
+                                    {{ apt.session }}
+                                </span>
+                            </td>
+                            <td>
+                                <span
+                                    class="admin-type-badge"
+                                    :class="`admin-type-badge--${apt.type.toLowerCase().replace(' ', '-')}`"
+                                >
+                                    {{ apt.type }}
+                                </span>
+                            </td>
+                            <td>
+                                <strong class="fee-cell">{{
+                                    apt.amount ? `₹${apt.amount}` : '—'
+                                }}</strong>
+                            </td>
+                            <td>
+                                <Tag
+                                    :severity="
+                                        apt.status === 'Complete'
+                                            ? 'success'
+                                            : apt.status === 'On Hold'
+                                              ? 'warn'
+                                              : 'info'
+                                    "
+                                    :value="apt.status"
+                                    rounded
+                                />
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div v-else class="empty-widget-state empty-widget-state--padded">
+                <i class="pi pi-calendar" />
+                <span>No appointments recorded for this date yet.</span>
             </div>
         </section>
     </div>
@@ -675,341 +817,245 @@ const quickActions = [
 
 <style scoped>
 .admin-dashboard-page {
-    gap: 1.5rem;
-}
-
-.admin-dashboard-hero {
-    padding: 1.5rem;
-}
-
-.admin-dashboard-hero__copy {
     display: grid;
-    gap: 0.5rem;
-    max-width: 42rem;
+    gap: 1.25rem;
 }
 
-.admin-dashboard-hero__eyebrow {
-    font-size: 0.75rem;
+/* Top Command Bar */
+.dashboard-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    padding: 1.25rem 1.5rem;
+}
+
+.dashboard-eyebrow {
+    display: block;
+    font-size: 0.74rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
     text-transform: uppercase;
+    letter-spacing: 0.08em;
     color: var(--primary-color);
 }
 
-.admin-dashboard-hero__title {
-    font-size: clamp(1.8rem, 2.8vw, 2.35rem);
+.dashboard-main-title {
+    margin: 0.2rem 0 0;
+    font-size: 1.4rem;
     font-weight: 800;
-    line-height: 1.1;
     color: var(--text-color);
 }
 
-.admin-dashboard-hero__subtitle {
-    font-size: 0.95rem;
-    line-height: 1.6;
-}
-
-.admin-dashboard-hero__actions {
+.dashboard-shortcuts {
     display: flex;
-    gap: 0.75rem;
-    width: 100%;
     flex-wrap: wrap;
+    gap: 0.65rem;
 }
 
-.admin-dashboard-hero__action-link {
-    flex: 1 1 14rem;
+.shortcut-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid var(--surface-border);
+    background: var(--surface-ground);
+    text-decoration: none;
+    transition: all 0.18s ease;
 }
 
-.admin-dashboard-hero__button {
-    width: 100%;
-    gap: 0.5rem;
+.shortcut-pill:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
 }
 
+.shortcut-pill__icon {
+    width: 2.15rem;
+    height: 2.15rem;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+}
+
+.shortcut-pill__text {
+    display: flex;
+    flex-direction: column;
+}
+
+.shortcut-pill__text strong {
+    font-size: 0.85rem;
+    color: var(--text-color);
+}
+
+.shortcut-pill__text small {
+    font-size: 0.72rem;
+    color: var(--text-secondary-color);
+}
+
+/* 4 KPI Stat Cards */
 .admin-dashboard-stats-grid {
     display: grid;
-    gap: 1rem;
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
 }
 
 .admin-dashboard-stat-card {
     position: relative;
     overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 1.2rem 1.3rem;
+    min-height: 8.5rem;
+    background: var(--surface-card);
     border: 1px solid var(--surface-border);
-}
-
-.admin-dashboard-stat-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.08);
-}
-
-.appointment-card {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--primary-color) 4%, var(--surface-card)) 0%, var(--surface-card) 100%) !important;
-}
-.appointment-card:hover {
-    border-color: var(--primary-color) !important;
-}
-
-.load-card {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--p-orange-500) 4%, var(--surface-card)) 0%, var(--surface-card) 100%) !important;
-}
-.load-card:hover {
-    border-color: var(--p-orange-500) !important;
-}
-
-.revenue-card {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--p-green-500) 4%, var(--surface-card)) 0%, var(--surface-card) 100%) !important;
-}
-.revenue-card:hover {
-    border-color: var(--p-green-500) !important;
-}
-
-.rating-card {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--p-cyan-500) 4%, var(--surface-card)) 0%, var(--surface-card) 100%) !important;
-}
-.rating-card:hover {
-    border-color: var(--p-cyan-500) !important;
+    border-radius: 12px;
 }
 
 .admin-dashboard-stat-card__rail {
     position: absolute;
     top: 0;
     left: 0;
-    width: 0.25rem;
-    height: 100%;
+    right: 0;
+    height: 3px;
 }
 
 .stat-card-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    width: 100%;
+    justify-content: space-between;
+    gap: 0.75rem;
 }
 
 .stat-icon-wrapper {
-    display: flex;
+    width: 2.3rem;
+    height: 2.3rem;
+    border-radius: 8px;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 50%;
-    transition: transform 0.2s ease;
-}
-
-.admin-dashboard-stat-card:hover .stat-icon-wrapper {
-    transform: scale(1.1);
-}
-
-.stat-card-icon {
-    font-size: 1.1rem;
-}
-
-.admin-dashboard-stat-card__label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: 1rem;
 }
 
 .stat-value-container {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    width: 100%;
-    margin-top: 0.5rem;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.35rem;
 }
 
-.admin-dashboard-stat-card__value {
-    font-size: 2rem;
+.stat-value {
+    margin: 0;
+    font-size: 1.85rem;
     font-weight: 800;
     color: var(--text-color);
-    line-height: 1;
-}
-
-.stat-value-small {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-secondary-color);
-    margin-left: 0.1rem;
 }
 
 .stat-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.2rem 0.5rem;
-    font-size: 0.7rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.74rem;
     font-weight: 700;
-    border-radius: 4px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
 }
 
 .stat-badge--success {
-    background: color-mix(in srgb, var(--p-green-500) 12%, transparent);
-    color: var(--p-green-500);
+    background: rgba(16, 185, 129, 0.14);
+    color: #059669;
 }
 
 .stat-badge--warning {
-    background: color-mix(in srgb, var(--p-orange-500) 12%, transparent);
-    color: var(--p-orange-500);
+    background: rgba(245, 158, 11, 0.14);
+    color: #d97706;
 }
 
 .stat-badge--info {
-    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
-    color: var(--primary-color);
+    background: rgba(59, 130, 246, 0.14);
+    color: #2563eb;
 }
 
 .stat-badge--cyan {
-    background: color-mix(in srgb, var(--p-cyan-500) 12%, transparent);
-    color: var(--p-cyan-500);
+    background: rgba(6, 182, 212, 0.14);
+    color: #0891b2;
 }
 
-.stat-visual-container {
-    margin-top: 0.75rem;
-    height: 1.5rem;
-    display: flex;
-    align-items: center;
-}
-
-.stat-progress-bar-bg {
-    width: 50%;
-    height: 6px;
-    background: var(--surface-border);
-    border-radius: 999px;
-    overflow: hidden;
-    margin-right: 0.5rem;
-}
-
-.stat-progress-bar-fill {
-    height: 100%;
-    border-radius: 999px;
-}
-
-.stat-progress-text {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--text-secondary-color);
-}
-
-.stat-metric-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.15rem 0.45rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    background: color-mix(in srgb, var(--p-orange-500) 10%, transparent);
-    color: var(--p-orange-500);
-    border-radius: 4px;
-}
-
-.mini-sparkline {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-}
-
-.spark-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--p-green-500);
-    box-shadow: 0 0 8px var(--p-green-500);
-}
-
-.spark-text {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--text-secondary-color);
-}
-
-.stars-row {
-    display: flex;
-    align-items: center;
-    gap: 0.15rem;
-}
-
-.star-active {
-    color: var(--p-amber-500, #eab308);
-    font-size: 0.75rem;
-}
-
-.stars-label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--text-secondary-color);
-}
-
-.star-inactive {
-    color: var(--surface-border);
-    font-size: 0.75rem;
-}
-
-.admin-dashboard-stat-card__note {
-    margin-top: 0.5rem;
+.stat-note {
+    margin: 0;
     font-size: 0.8rem;
     color: var(--text-secondary-color);
 }
 
-.admin-dashboard-content-grid {
+/* Primary Analytics Grid */
+.primary-analytics-grid {
     display: grid;
-    gap: 1.5rem;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.85fr) minmax(20rem, 1fr);
+    gap: 1.25rem;
 }
 
-.admin-dashboard-main-column {
+.chart-panel {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
+    padding: 1.35rem 1.5rem;
 }
 
-.admin-analytics-card {
-    padding: 1.5rem;
+.chart-panel__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.panel-link {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    text-decoration: none;
 }
 
 .analytics-tabs {
-    display: flex;
+    display: inline-flex;
     gap: 0.35rem;
+    padding: 0.25rem;
+    border-radius: 8px;
+    background: var(--surface-ground);
+    border: 1px solid var(--surface-border);
 }
 
 .analytics-tab-btn {
     display: inline-flex;
     align-items: center;
-    padding: 0.45rem 0.85rem;
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-secondary-color);
-    background: var(--surface-card);
-    border: 1px solid var(--surface-border);
+    gap: 0.4rem;
+    padding: 0.4rem 0.8rem;
     border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary-color);
+    font-size: 0.82rem;
+    font-weight: 700;
     cursor: pointer;
-    transition: all 0.2s ease;
-    gap: 0.35rem;
-}
-
-.analytics-tab-btn i {
-    font-size: 0.85rem;
-}
-
-.analytics-tab-btn:hover {
-    color: var(--text-color);
-    border-color: var(--primary-color);
+    transition: all 0.15s ease;
 }
 
 .analytics-tab-btn.is-active {
-    color: var(--primary-contrast-color);
-    background: var(--primary-color);
-    border-color: var(--primary-color);
+    background: var(--surface-card);
+    color: var(--primary-color);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .analytics-summary-row {
-    display: flex;
-    gap: 2rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap;
-    background: var(--surface-hover);
-    padding: 1rem 1.25rem;
-    border-radius: 6px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    background: var(--surface-ground);
     border: 1px solid var(--surface-border);
 }
 
@@ -1017,261 +1063,177 @@ const quickActions = [
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
-    min-width: 8rem;
 }
 
 .analytics-summary-value {
-    font-size: 1.4rem;
+    font-size: 1.15rem;
     font-weight: 800;
     color: var(--text-color);
-    line-height: 1.2;
 }
 
-.analytics-summary-trend {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.15rem;
-    font-size: 0.76rem;
-    font-weight: 700;
-    margin-top: 0.1rem;
-}
-
-.analytics-summary-trend.positive {
-    color: var(--p-green-500);
-}
-
-.chart-container {
-    height: 220px;
+.main-chart-box {
+    height: 17.5rem;
     position: relative;
-    width: 100%;
 }
 
-.analytics-svg-chart {
-    width: 100%;
-    height: 100%;
-    overflow: visible;
+.doughnut-chart-box {
+    height: 14.5rem;
+    position: relative;
 }
 
-.chart-bar-rect {
-    cursor: pointer;
-    transition: opacity 0.2s ease;
+.mini-Breakdown-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
 }
 
-.chart-bar-rect:hover {
-    opacity: 0.85;
+.mini-breakdown-pill {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    background: var(--surface-ground);
+    font-size: 0.82rem;
 }
 
-.chart-point-circle {
-    cursor: pointer;
-    transition: r 0.15s ease, fill 0.15s ease;
-}
-
-.chart-line-path {
-    stroke-dasharray: 1000;
-    stroke-dashoffset: 1000;
-    animation: drawLine 1.5s ease forwards;
-}
-
-.chart-area-path {
-    animation: fadeIn 1s ease forwards;
-    opacity: 0;
-}
-
-.tooltip-bg {
-    filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.04));
-}
-
-@keyframes drawLine {
-    to {
-        stroke-dashoffset: 0;
-    }
-}
-
-@keyframes fadeIn {
-    to {
-        opacity: 1;
-    }
-}
-
-.admin-dashboard-panel {
-    padding: 1.25rem;
-}
-
-.admin-dashboard-panel--wide {
-    min-width: 0;
-}
-
-.admin-dashboard-section-header {
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid var(--surface-border);
-}
-
-.admin-dashboard-section-header--compact {
-    margin-bottom: 0.75rem;
-}
-
-.admin-dashboard-section-title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--text-color);
-}
-
-.admin-dashboard-section-copy {
-    margin-top: 0.25rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary-color);
-}
-
-.admin-dashboard-live-badge {
-    border-radius: 9999px;
-}
-
-.admin-dashboard-timeline {
+/* Secondary 3-Column Row */
+.secondary-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1.25rem;
 }
 
-.admin-dashboard-timeline__item {
+.alerts-stack {
     display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 1rem;
-    align-items: start;
+    gap: 0.6rem;
 }
 
-.admin-dashboard-timeline__time {
-    flex-shrink: 0;
-    padding: 0.35rem 0.65rem;
-    background: color-mix(
-        in srgb,
-        var(--primary-color) 8%,
-        var(--surface-card)
-    );
-    color: var(--primary-color);
-    font-size: 0.75rem;
-    font-weight: 700;
-}
-
-.admin-dashboard-timeline__content {
-    display: grid;
-    gap: 0.25rem;
-}
-
-.admin-dashboard-timeline__title {
-    display: block;
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--text-color);
-}
-
-.admin-dashboard-timeline__detail {
-    font-size: 0.8rem;
-    line-height: 1.55;
-    color: var(--text-secondary-color);
-}
-
-.admin-dashboard-side-column {
-    display: grid;
-    gap: 1.5rem;
-}
-
-.admin-dashboard-focus-list {
-    gap: 0.75rem;
-}
-
-.admin-dashboard-focus-card {
-    padding: 0.9rem;
-}
-
-.admin-dashboard-focus-card__label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.admin-dashboard-focus-card__value {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--text-color);
-}
-
-.admin-dashboard-focus-card__note {
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
-    line-height: 1.55;
-    color: var(--text-secondary-color);
-}
-
-.admin-dashboard-system-card {
-    padding: 1.25rem;
-}
-
-.admin-dashboard-system-card__label {
-    display: block;
-    margin-bottom: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.72);
-}
-
-.admin-dashboard-system-card__title {
+.stock-alert-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.25rem;
-    color: #fff;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 8px;
+    background: var(--surface-ground);
+    border: 1px solid var(--surface-border);
 }
 
-.admin-dashboard-system-card__icon {
-    color: #34d399;
+.stock-alert-row__info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
-.admin-dashboard-system-card__copy {
-    margin-top: 0.75rem;
-    font-size: 0.8rem;
-    line-height: 1.55;
-    color: rgba(255, 255, 255, 0.72);
-}
-
-.admin-dashboard-actions-grid {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.admin-dashboard-action-card {
-    padding: 1rem;
-}
-
-.admin-dashboard-action-card__icon {
-    display: block;
-    margin-bottom: 0.75rem;
-    font-size: 1.4rem;
-    color: var(--primary-color);
-}
-
-.admin-dashboard-action-card__title {
-    display: block;
-    margin-bottom: 0.25rem;
-    font-size: 1rem;
-    font-weight: 700;
+.stock-alert-row__info strong {
+    font-size: 0.88rem;
     color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.admin-dashboard-action-card__copy {
-    font-size: 0.8rem;
-    line-height: 1.55;
+.stock-alert-row__info span {
+    font-size: 0.75rem;
     color: var(--text-secondary-color);
 }
 
-@media (max-width: 991px) {
+.empty-widget-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 8rem;
+    border-radius: 10px;
+    background: var(--surface-ground);
+    color: var(--text-secondary-color);
+    font-size: 0.88rem;
+}
+
+/* Recent Appointments Table */
+.recent-appointments-panel {
+    padding: 0;
+    overflow: hidden;
+}
+
+.recent-appointments-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1.15rem 1.35rem;
+    border-bottom: 1px solid var(--surface-border);
+    background: var(--surface-card);
+}
+
+.recent-table-wrap {
+    overflow-x: auto;
+}
+
+.recent-apt-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.875rem;
+}
+
+.recent-apt-table th {
+    padding: 0.9rem 1.25rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary-color);
+    background: color-mix(in srgb, var(--surface-50) 80%, var(--surface-card));
+    border-bottom: 1px solid var(--surface-border);
+    white-space: nowrap;
+}
+
+.recent-apt-table td {
+    padding: 0.95rem 1.25rem;
+    border-bottom: 1px solid var(--surface-border);
+    color: var(--text-color);
+    vertical-align: middle;
+}
+
+.recent-apt-table tbody tr {
+    border-left: 3px solid transparent;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.recent-apt-table tbody tr:nth-child(odd) {
+    background: color-mix(in srgb, var(--surface-card) 96%, var(--surface-50));
+}
+
+.recent-apt-table tbody tr:hover {
+    background: color-mix(in srgb, var(--surface-hover) 78%, var(--surface-card));
+    border-left-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+}
+
+.fee-cell {
+    font-variant-numeric: tabular-nums;
+}
+
+.empty-widget-state--padded {
+    margin: 1.25rem;
+}
+
+@media (max-width: 1200px) {
+    .admin-dashboard-stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .primary-analytics-grid,
+    .secondary-analytics-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
     .admin-dashboard-stats-grid,
-    .admin-dashboard-content-grid,
-    .admin-dashboard-actions-grid {
+    .analytics-summary-row {
         grid-template-columns: 1fr;
     }
 }

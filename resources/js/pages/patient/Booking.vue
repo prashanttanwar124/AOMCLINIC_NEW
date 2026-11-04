@@ -71,6 +71,8 @@ const form = reactive({
         '',
     appointment_session: '',
     appointment_number: null as number | null,
+    second_appointment_number: null as number | null,
+    is_double_booking: false,
     appointment_type: props.appointmentTypes[0]?.value ?? 'new',
     reason_for_visit: '',
     errors: {} as Record<string, string>,
@@ -150,9 +152,15 @@ const tokenGroupOptions = computed<TokenGroupOption[]>(() => {
 });
 
 const selectedTokenLabel = computed(() => {
-    return form.appointment_number
-        ? `Token #${form.appointment_number}`
-        : 'Not selected';
+    if (!form.appointment_number) {
+        return 'Not selected';
+    }
+
+    if (form.is_double_booking && form.second_appointment_number) {
+        return `Tokens #${form.appointment_number} & #${form.second_appointment_number}`;
+    }
+
+    return `Token #${form.appointment_number}`;
 });
 
 const selectedTokenGroupLabel = computed(() => {
@@ -166,17 +174,28 @@ const selectedTokenGroupLabel = computed(() => {
 });
 
 watch(
-    tokenGroupOptions,
-    (options) => {
-        const activeTokenGroup = options.find(
-            (option) => option.token === form.appointment_number,
-        );
+    [
+        tokenGroupOptions,
+        () => form.appointment_number,
+        () => form.is_double_booking,
+    ],
+    ([options]) => {
+        const available = selectedSession.value?.availableTokens ?? [];
+        if (!available.includes(form.appointment_number ?? -1)) {
+            form.appointment_number = options[0]?.token ?? null;
+        }
 
-        if (activeTokenGroup) {
+        if (!form.is_double_booking || !form.appointment_number) {
+            form.second_appointment_number = null;
+
             return;
         }
 
-        form.appointment_number = options[0]?.token ?? null;
+        const nextToken =
+            available.find((t) => t > (form.appointment_number ?? 0)) ??
+            available.find((t) => t !== form.appointment_number) ??
+            null;
+        form.second_appointment_number = nextToken;
     },
     { immediate: true },
 );
@@ -222,6 +241,9 @@ const submit = async (): Promise<void> => {
             appointment_date: form.appointment_date,
             appointment_session: form.appointment_session,
             appointment_number: form.appointment_number,
+            second_appointment_number: form.is_double_booking
+                ? form.second_appointment_number
+                : null,
             appointment_type: form.appointment_type,
             reason_for_visit: form.reason_for_visit,
         });
@@ -433,11 +455,28 @@ const submit = async (): Promise<void> => {
                 <!-- Token Group Selection -->
                 <div class="field-group">
                     <div class="field-title-row">
-                        <label class="field-title">Pick Token Group</label>
-                        <span class="field-hint">
-                            We assign the first free token from your chosen
-                            group of 5
-                        </span>
+                        <div>
+                            <label class="field-title">Pick Token Group</label>
+                            <div class="field-hint">
+                                We assign the first free token from your chosen
+                                group of 5
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            class="double-booking-pill"
+                            :class="{ 'is-active': form.is_double_booking }"
+                            :disabled="
+                                !bookingEnabled ||
+                                (selectedSession?.availableTokens.length ?? 0) < 2
+                            "
+                            @click="
+                                form.is_double_booking = !form.is_double_booking
+                            "
+                        >
+                            <i class="pi pi-clone" />
+                            <span>Double Appointment (2 Tokens)</span>
+                        </button>
                     </div>
 
                     <div
@@ -965,6 +1004,37 @@ const submit = async (): Promise<void> => {
     min-height: 3rem;
     font-size: 1rem;
     font-weight: 700;
+}
+
+.double-booking-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.38rem 0.78rem;
+    border-radius: 999px;
+    border: 1px solid var(--surface-border);
+    background: var(--surface-ground);
+    color: var(--text-color);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.double-booking-pill:hover:not(:disabled) {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.double-booking-pill.is-active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #ffffff;
+}
+
+.double-booking-pill:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 @media (max-width: 991px) {

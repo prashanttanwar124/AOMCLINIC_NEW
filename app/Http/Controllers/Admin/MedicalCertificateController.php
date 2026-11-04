@@ -56,6 +56,9 @@ class MedicalCertificateController extends Controller
 
         $paginated->getCollection()->transform(function (MedicalCertificate $cert): array {
             $patient = $cert->patient;
+            $durationDays = ($cert->start_date && $cert->end_date)
+                ? (int) $cert->start_date->diffInDays($cert->end_date) + 1
+                : null;
 
             return [
                 'id' => $cert->id,
@@ -63,12 +66,17 @@ class MedicalCertificateController extends Controller
                 'patient_name' => $patient?->name ?? 'N/A',
                 'patient_phone' => $this->formatPatientPhone($patient?->phone, $patient?->country_calling_code),
                 'patient_email' => $patient?->email,
+                'patient_age' => $patient?->date_of_birth?->age,
+                'patient_gender' => $patient?->gender ? str($patient->gender)->headline()->toString() : null,
+                'patient_address' => $patient?->address,
+                'patient_city' => $patient?->city,
                 'certificate_type_id' => $cert->certificate_type_id,
                 'certificate_type_name' => $cert->certificateType?->name ?? 'N/A',
                 'certificate_number' => $cert->certificate_number,
                 'issue_date' => $cert->issue_date?->toDateString(),
                 'start_date' => $cert->start_date?->toDateString(),
                 'end_date' => $cert->end_date?->toDateString(),
+                'duration_days' => $durationDays,
                 'diagnosis' => $cert->diagnosis,
                 'charge_amount' => $cert->charge_amount,
                 'payment_status' => $cert->payment_status,
@@ -77,7 +85,23 @@ class MedicalCertificateController extends Controller
             ];
         });
 
-        $certificateTypes = CertificateType::query()->orderBy('name')->get();
+        $certificateTypes = CertificateType::query()
+            ->withCount('medicalCertificates')
+            ->orderBy('name')
+            ->get();
+        $summary = [
+            'total' => MedicalCertificate::query()->count(),
+            'active' => MedicalCertificate::query()->where('status', 'active')->count(),
+            'paidAmount' => (float) MedicalCertificate::query()
+                ->where('status', 'active')
+                ->where('payment_status', 'paid')
+                ->sum('charge_amount'),
+            'unpaidCount' => MedicalCertificate::query()
+                ->where('status', 'active')
+                ->where('payment_status', 'unpaid')
+                ->count(),
+        ];
+
         $settings = ClinicSetting::current();
         $clinic = [
             'clinic_name' => $settings->clinic_name,
@@ -89,12 +113,13 @@ class MedicalCertificateController extends Controller
             'address' => $settings->address,
             'phone' => $settings->phone,
             'email' => $settings->email,
-            'logo_url' => $settings->logo_path ? Storage::disk('public')->url($settings->logo_path) : null,
+            'logo_url' => $settings->logoUrl(),
         ];
 
         return Inertia::render('admin/MedicalCertificates', [
             'certificates' => $paginated,
             'certificateTypes' => $certificateTypes,
+            'summary' => $summary,
             'clinic' => $clinic,
             'filters' => [
                 'search' => $search,
@@ -129,18 +154,33 @@ class MedicalCertificateController extends Controller
     {
         $medicalCertificate->load(['patient', 'certificateType']);
         $settings = ClinicSetting::current();
+        $patient = $medicalCertificate->patient;
+        $durationDays = ($medicalCertificate->start_date && $medicalCertificate->end_date)
+            ? (int) $medicalCertificate->start_date->diffInDays($medicalCertificate->end_date) + 1
+            : null;
 
         return Inertia::render('admin/medical-certificates/Print', [
             'certificate' => [
                 'id' => $medicalCertificate->id,
-                'patient_name' => $medicalCertificate->patient?->name ?? 'N/A',
-                'patient_phone' => $this->formatPatientPhone($medicalCertificate->patient?->phone, $medicalCertificate->patient?->country_calling_code),
+                'patient_id' => $medicalCertificate->patient_id,
+                'patient_name' => $patient?->name ?? 'N/A',
+                'patient_phone' => $this->formatPatientPhone($patient?->phone, $patient?->country_calling_code),
+                'patient_age' => $patient?->date_of_birth?->age,
+                'patient_gender' => $patient?->gender ? str($patient->gender)->headline()->toString() : null,
+                'patient_address' => $patient?->address,
+                'patient_city' => $patient?->city,
+                'certificate_type_name' => $medicalCertificate->certificateType?->name ?? 'Medical Certificate',
                 'certificate_number' => $medicalCertificate->certificate_number,
                 'issue_date' => $medicalCertificate->issue_date?->format('d M Y'),
                 'start_date' => $medicalCertificate->start_date?->format('d M Y'),
                 'end_date' => $medicalCertificate->end_date?->format('d M Y'),
+                'resume_date' => $medicalCertificate->end_date?->copy()->addDay()->format('d M Y'),
+                'duration_days' => $durationDays,
                 'diagnosis' => $medicalCertificate->diagnosis,
                 'notes' => $medicalCertificate->notes,
+                'charge_amount' => $medicalCertificate->charge_amount,
+                'payment_status' => $medicalCertificate->payment_status,
+                'status' => $medicalCertificate->status,
             ],
             'clinic' => [
                 'clinic_name' => $settings->clinic_name,
@@ -152,7 +192,7 @@ class MedicalCertificateController extends Controller
                 'address' => $settings->address,
                 'phone' => $settings->phone,
                 'email' => $settings->email,
-                'logo_url' => $settings->logo_path ? Storage::disk('public')->url($settings->logo_path) : null,
+                'logo_url' => $settings->logoUrl(),
             ],
         ]);
     }

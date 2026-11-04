@@ -1,20 +1,20 @@
 <?php
 
-use App\Http\Controllers\Admin\AppointmentController;
 use App\Http\Controllers\Admin\AppointmentBookingController;
+use App\Http\Controllers\Admin\AppointmentController;
 use App\Http\Controllers\Admin\BookingSettingController;
+use App\Http\Controllers\Admin\CertificateTypeController;
+use App\Http\Controllers\Admin\ClinicSettingController;
 use App\Http\Controllers\Admin\CourierParcelController;
 use App\Http\Controllers\Admin\CurrentAppointmentController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\MedicalCertificateController;
 use App\Http\Controllers\Admin\MedicineController;
 use App\Http\Controllers\Admin\MedicineTrackingController;
 use App\Http\Controllers\Admin\PatientController;
 use App\Http\Controllers\Admin\RoleController;
-use App\Http\Controllers\Admin\ClinicSettingController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\VitalsTrackingController;
-use App\Http\Controllers\Admin\CertificateTypeController;
-use App\Http\Controllers\Admin\MedicalCertificateController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -35,6 +35,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('patients/{patient}/join', [PatientController::class, 'join'])->name('admin.patients.join');
     Route::post('patients/{patient}/unlink', [PatientController::class, 'unlink'])->name('admin.patients.unlink');
     Route::get('patients', [PatientController::class, 'index'])->name('admin.patients');
+    Route::post('patients', [PatientController::class, 'store'])->name('admin.patients.store');
+    Route::patch('patients/{patient}', [PatientController::class, 'update'])->name('admin.patients.update');
 
     Route::get('medicine-tracking', [MedicineTrackingController::class, 'index'])->name('admin.medicine-tracking');
     Route::patch('medicine-tracking/{appointment}', [MedicineTrackingController::class, 'update'])->name('admin.medicine-tracking.update');
