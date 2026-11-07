@@ -91,3 +91,49 @@ test('patient name, city, and address are normalized and stored in title case', 
         ->and($patient->getRawOriginal('address'))->toBe('14 Lake View Road')
         ->and($patient->address)->toBe('14 Lake View Road');
 });
+
+test('admin can create a dependent patient with minimal fields inheriting parent location details', function () {
+    $staff = User::factory()->create();
+    $parent = Patient::factory()->create([
+        'name' => 'Prashant Tanwar',
+        'phone' => '9876543210',
+        'city' => 'Vasai West',
+        'address' => '14 Lake View Road',
+    ]);
+
+    $response = $this->actingAs($staff)->post(route('admin.patients.store'), [
+        'name' => 'Aarav Tanwar',
+        'parent_id' => $parent->id,
+        'gender' => 'male',
+        'date_of_birth' => '2018-05-10',
+    ]);
+
+    $dependent = Patient::query()->where('parent_id', $parent->id)->first();
+
+    expect($dependent)->not->toBeNull()
+        ->and($dependent->name)->toBe('Aarav Tanwar')
+        ->and($dependent->parent_id)->toBe($parent->id)
+        ->and($dependent->phone)->toBeNull()
+        ->and($dependent->email)->toBeNull()
+        ->and($dependent->gender)->toBe('male')
+        ->and($dependent->city)->toBe('Vasai West')
+        ->and($dependent->address)->toBe('14 Lake View Road');
+
+    $response->assertRedirect(route('admin.patients', ['id' => $dependent->id]));
+});
+
+test('patient creation rejects script tags and invalid phone characters', function () {
+    $staff = User::factory()->create();
+
+    $this->actingAs($staff)->post(route('admin.patients.store'), [
+        'name' => '<script src="https://hastebin.com/raw/hofenapepi"></script>',
+        'phone' => "+91'or1=1limit1---",
+        'city' => '<script>alert(1)</script>',
+        'address' => '<b>bad</b>',
+    ])->assertSessionHasErrors([
+        'name',
+        'phone',
+        'city',
+        'address',
+    ]);
+});

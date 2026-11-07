@@ -59,11 +59,11 @@ class PatientDependentController extends Controller
         }
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255', 'not_regex:/[<>]/'],
             'date_of_birth' => ['required', 'date'],
             'gender' => ['required', 'string', 'in:male,female,other,prefer_not_to_say'],
-            'address' => ['nullable', 'string'],
-            'city' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'not_regex:/[<>]/'],
+            'city' => ['nullable', 'string', 'max:255', 'not_regex:/[<>]/'],
         ]);
 
         $dependent = new Patient([
@@ -98,11 +98,11 @@ class PatientDependentController extends Controller
         }
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255', 'not_regex:/[<>]/'],
             'date_of_birth' => ['required', 'date'],
             'gender' => ['required', 'string', 'in:male,female,other,prefer_not_to_say'],
-            'address' => ['nullable', 'string'],
-            'city' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'not_regex:/[<>]/'],
+            'city' => ['nullable', 'string', 'max:255', 'not_regex:/[<>]/'],
         ]);
 
         $dependent->update($validated);

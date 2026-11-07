@@ -369,15 +369,15 @@ class PatientController extends Controller
         $isDependent = filled($request->input('parent_id'));
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255', 'not_regex:/[<>]/'],
             'email' => ['nullable', 'string', 'email', 'max:255', Rule::unique(Patient::class, 'email')],
-            'phone' => [$isDependent ? 'nullable' : 'required', 'string', 'max:30'],
+            'phone' => [$isDependent ? 'nullable' : 'required', 'string', 'max:30', 'regex:/^[0-9+\-\s()]{7,20}$/'],
             'country_code' => ['nullable', 'string', 'size:2'],
             'country_calling_code' => ['nullable', 'string', 'max:6'],
             'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
             'gender' => ['nullable', 'string', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
-            'city' => ['nullable', 'string', 'max:255'],
-            'address' => ['nullable', 'string', 'max:1000'],
+            'city' => ['nullable', 'string', 'max:255', 'not_regex:/[<>]/'],
+            'address' => ['nullable', 'string', 'max:1000', 'not_regex:/[<>]/'],
             'password' => ['nullable', 'string', Password::default()],
             'parent_id' => ['nullable', 'integer', 'exists:patients,id'],
         ]);
@@ -385,6 +385,10 @@ class PatientController extends Controller
         $parent = filled($validated['parent_id'] ?? null)
             ? Patient::find((int) $validated['parent_id'])
             : null;
+
+        if ($parent && $parent->parent_id !== null) {
+            $parent = Patient::find($parent->parent_id) ?? $parent;
+        }
 
         $callingCode = ltrim((string) ($validated['country_calling_code'] ?? $parent?->country_calling_code ?? '91'), '+') ?: '91';
         $rawPhone = trim((string) ($validated['phone'] ?? ''));
@@ -455,15 +459,15 @@ class PatientController extends Controller
         $isDependent = $patient->parent_id !== null;
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255', 'not_regex:/[<>]/'],
             'email' => ['nullable', 'string', 'email', 'max:255', Rule::unique(Patient::class, 'email')->ignore($patient->id)],
-            'phone' => [$isDependent ? 'nullable' : 'required', 'string', 'max:30'],
+            'phone' => [$isDependent ? 'nullable' : 'required', 'string', 'max:30', 'regex:/^[0-9+\-\s()]{7,20}$/'],
             'country_code' => ['nullable', 'string', 'size:2'],
             'country_calling_code' => ['nullable', 'string', 'max:6'],
             'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
             'gender' => ['nullable', 'string', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
-            'city' => ['nullable', 'string', 'max:255'],
-            'address' => ['nullable', 'string', 'max:1000'],
+            'city' => ['nullable', 'string', 'max:255', 'not_regex:/[<>]/'],
+            'address' => ['nullable', 'string', 'max:1000', 'not_regex:/[<>]/'],
             'password' => ['nullable', 'string', Password::default()],
         ]);
 

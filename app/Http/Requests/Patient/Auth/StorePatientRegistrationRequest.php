@@ -37,15 +37,15 @@ class StorePatientRegistrationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255', 'not_regex:/[<>]/'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique(Patient::class)],
-            'phone' => ['required', 'string', 'max:30'],
+            'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+\-\s()]{7,20}$/'],
             'country_code' => ['required', 'string', 'size:2'],
             'country_calling_code' => ['required', 'string', 'max:6'],
             'date_of_birth' => ['required', Rule::date()->beforeToday()],
             'gender' => ['required', 'string', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
-            'address' => ['nullable', 'string'],
-            'city' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'not_regex:/[<>]/'],
+            'city' => ['nullable', 'string', 'max:255', 'not_regex:/[<>]/'],
             'password' => ['required', 'string', Password::default(), 'confirmed'],
         ];
     }

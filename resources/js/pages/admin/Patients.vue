@@ -561,11 +561,81 @@ const patientForm = useForm({
 });
 
 const creatingDependentForParent = ref<PatientCard | null>(null);
+const isAddingAsDependent = ref(false);
+const selectedParentForDependent = ref<any>(null);
+const parentSuggestions = ref<any[]>([]);
+
+const searchParentPatients = async (event: { query: string }) => {
+    try {
+        const { data } = await http.get(PatientController.search().url, {
+            params: { query: event.query },
+        });
+        parentSuggestions.value = (data || []).filter((p: any) => !p.parent_id);
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+function setDependentMode(asDependent: boolean): void {
+    isAddingAsDependent.value = asDependent;
+    patientForm.clearErrors();
+
+    if (asDependent) {
+        if (creatingDependentForParent.value) {
+            const p = creatingDependentForParent.value;
+            selectedParentForDependent.value = {
+                id: p.id,
+                name: p.name,
+                phone: p.phone,
+                city: p.city,
+                address: p.address,
+                label: `${p.name} (#${p.id})${p.phone ? ` - ${p.phone}` : ''}`,
+            };
+            patientForm.parent_id = p.id;
+        } else if (selectedPatient.value && !selectedPatient.value.parent) {
+            const p = selectedPatient.value;
+            selectedParentForDependent.value = {
+                id: p.id,
+                name: p.name,
+                phone: p.phone,
+                city: p.city,
+                address: p.address,
+                label: `${p.name} (#${p.id})${p.phone ? ` - ${p.phone}` : ''}`,
+            };
+            patientForm.parent_id = p.id;
+        } else {
+            selectedParentForDependent.value = null;
+            patientForm.parent_id = null;
+        }
+        patientForm.phone = '';
+        patientForm.email = '';
+        patientForm.password = '';
+        patientForm.city = '';
+        patientForm.address = '';
+    } else {
+        creatingDependentForParent.value = null;
+        selectedParentForDependent.value = null;
+        patientForm.parent_id = null;
+    }
+}
+
+watch(selectedParentForDependent, (val) => {
+    if (!isAddingAsDependent.value) {
+        return;
+    }
+    if (val && typeof val === 'object' && 'id' in val) {
+        patientForm.parent_id = val.id;
+    } else {
+        patientForm.parent_id = null;
+    }
+});
 
 function openCreatePatientDialog(): void {
     isEditingPatient.value = false;
     editingPatientId.value = null;
     creatingDependentForParent.value = null;
+    isAddingAsDependent.value = false;
+    selectedParentForDependent.value = null;
     patientForm.reset();
     patientForm.parent_id = null;
     patientForm.clearErrors();
@@ -576,14 +646,18 @@ function openCreateDependentDialog(parent: PatientCard): void {
     isEditingPatient.value = false;
     editingPatientId.value = null;
     creatingDependentForParent.value = parent;
+    isAddingAsDependent.value = true;
+    selectedParentForDependent.value = {
+        id: parent.id,
+        name: parent.name,
+        phone: parent.phone,
+        city: parent.city,
+        address: parent.address,
+        label: `${parent.name} (#${parent.id})${parent.phone ? ` - ${parent.phone}` : ''}`,
+    };
     patientForm.reset();
     patientForm.clearErrors();
     patientForm.parent_id = parent.id;
-    patientForm.phone = parent.rawPhone ?? (parent.phone ? parent.phone.replace(/^\+\d+\s*/, '') : '');
-    patientForm.country_code = parent.countryCode ?? 'IN';
-    patientForm.country_calling_code = parent.countryCallingCode ?? '91';
-    patientForm.city = parent.city ?? '';
-    patientForm.address = parent.address ?? '';
     patientDialogVisible.value = true;
 }
 
@@ -591,6 +665,14 @@ function openEditPatientDialog(patient: PatientCard): void {
     isEditingPatient.value = true;
     editingPatientId.value = patient.id;
     creatingDependentForParent.value = null;
+    isAddingAsDependent.value = Boolean(patient.parent?.id);
+    selectedParentForDependent.value = patient.parent
+        ? {
+              id: patient.parent.id,
+              name: patient.parent.name,
+              label: `${patient.parent.name} (#${patient.parent.id})`,
+          }
+        : null;
     patientForm.clearErrors();
     patientForm.parent_id = patient.parent?.id ?? null;
     patientForm.name = patient.name;
@@ -611,6 +693,11 @@ function openEditPatientDialog(patient: PatientCard): void {
 }
 
 function submitPatientForm(): void {
+    if (!isEditingPatient.value && isAddingAsDependent.value && !patientForm.parent_id) {
+        patientForm.setError('parent_id', 'Please select a primary account holder for this dependent.');
+        return;
+    }
+
     if (isEditingPatient.value && editingPatientId.value) {
         patientForm.patch(PatientController.update(editingPatientId.value).url, {
             preserveScroll: true,
@@ -1250,8 +1337,10 @@ function submitPatientForm(): void {
             :header="
                 isEditingPatient
                     ? 'Edit Patient Profile'
-                    : creatingDependentForParent
-                      ? `Add Dependent under ${creatingDependentForParent.name}`
+                    : isAddingAsDependent
+                      ? creatingDependentForParent
+                          ? `Add Dependent under ${creatingDependentForParent.name}`
+                          : 'Add Dependent Patient'
                       : 'Add New Patient'
             "
             modal
@@ -1259,10 +1348,59 @@ function submitPatientForm(): void {
             :style="{ width: '36rem', maxWidth: '95vw' }"
         >
             <form class="dialog-form" @submit.prevent="submitPatientForm">
-                <div class="form-row">
+                <!-- Patient Type Toggle (Primary vs Dependent) -->
+                <div v-if="!isEditingPatient" class="patient-mode-switcher">
+                    <button
+                        type="button"
+                        class="patient-mode-switcher__btn"
+                        :class="{ 'is-active': !isAddingAsDependent }"
+                        @click="setDependentMode(false)"
+                    >
+                        <i class="pi pi-user"></i>
+                        <span>Primary Patient</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="patient-mode-switcher__btn"
+                        :class="{ 'is-active': isAddingAsDependent }"
+                        @click="setDependentMode(true)"
+                    >
+                        <i class="pi pi-users"></i>
+                        <span>Add as Dependent</span>
+                    </button>
+                </div>
+
+                <!-- Parent Account Holder Selector when adding as Dependent -->
+                <div v-if="!isEditingPatient && isAddingAsDependent" class="dependent-parent-box">
+                    <div class="field">
+                        <label for="parent_patient_select" class="form-label">
+                            Primary Account Holder (Parent) <span class="required">*</span>
+                        </label>
+                        <AutoComplete
+                            id="parent_patient_select"
+                            v-model="selectedParentForDependent"
+                            :suggestions="parentSuggestions"
+                            option-label="label"
+                            placeholder="Search parent by name, phone, or ID..."
+                            fluid
+                            :invalid="!!patientForm.errors.parent_id"
+                            @complete="searchParentPatients"
+                        />
+                        <InputError :message="patientForm.errors.parent_id" />
+                    </div>
+                    <p class="dependent-parent-box__hint">
+                        <i class="pi pi-info-circle"></i>
+                        Phone number, city, address, and portal login will be inherited automatically from the primary account holder.
+                    </p>
+                </div>
+
+                <div
+                    class="form-row"
+                    :class="{ 'form-row--single': isAddingAsDependent }"
+                >
                     <div class="field">
                         <label for="patient_name" class="form-label">
-                            Full Name <span class="required">*</span>
+                            {{ isAddingAsDependent ? 'Dependent Full Name' : 'Full Name' }} <span class="required">*</span>
                         </label>
                         <InputText
                             id="patient_name"
@@ -1276,16 +1414,14 @@ function submitPatientForm(): void {
                         <InputError :message="patientForm.errors.name" />
                     </div>
 
-                    <div class="field">
+                    <div v-if="!isAddingAsDependent" class="field">
                         <label for="patient_phone" class="form-label">
-                            Phone Number
-                            <span v-if="!patientForm.parent_id" class="required">*</span>
-                            <span v-else class="form-label__hint">(Uses parent phone if blank)</span>
+                            Phone Number <span class="required">*</span>
                         </label>
                         <InputText
                             id="patient_phone"
                             v-model="patientForm.phone"
-                            :required="!patientForm.parent_id"
+                            required
                             fluid
                             placeholder="9876543210"
                             :invalid="!!patientForm.errors.phone"
@@ -1329,70 +1465,72 @@ function submitPatientForm(): void {
                     </div>
                 </div>
 
-                <div class="form-row">
+                <template v-if="!isAddingAsDependent">
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="patient_email" class="form-label">
+                                Email Address
+                                <span class="form-label__hint">(Portal login)</span>
+                            </label>
+                            <InputText
+                                id="patient_email"
+                                v-model="patientForm.email"
+                                type="email"
+                                fluid
+                                placeholder="patient@example.com"
+                                :invalid="!!patientForm.errors.email"
+                            />
+                            <InputError :message="patientForm.errors.email" />
+                        </div>
+
+                        <div class="field">
+                            <label for="patient_password" class="form-label">
+                                Portal Password
+                                <span class="form-label__hint">
+                                    {{ isEditingPatient ? '(Blank to keep)' : '(Optional)' }}
+                                </span>
+                            </label>
+                            <PasswordInput
+                                id="patient_password"
+                                v-model="patientForm.password"
+                                autocomplete="new-password"
+                                placeholder="••••••••"
+                                :invalid="!!patientForm.errors.password"
+                            />
+                            <InputError :message="patientForm.errors.password" />
+                        </div>
+                    </div>
+
                     <div class="field">
-                        <label for="patient_email" class="form-label">
-                            Email Address
-                            <span class="form-label__hint">(Portal login)</span>
+                        <label for="patient_city" class="form-label">
+                            City
                         </label>
                         <InputText
-                            id="patient_email"
-                            v-model="patientForm.email"
-                            type="email"
+                            id="patient_city"
+                            v-model="patientForm.city"
                             fluid
-                            placeholder="patient@example.com"
-                            :invalid="!!patientForm.errors.email"
+                            placeholder="e.g., Mumbai"
+                            :invalid="!!patientForm.errors.city"
                         />
-                        <InputError :message="patientForm.errors.email" />
+                        <InputError :message="patientForm.errors.city" />
                     </div>
 
                     <div class="field">
-                        <label for="patient_password" class="form-label">
-                            Portal Password
-                            <span class="form-label__hint">
-                                {{ isEditingPatient ? '(Blank to keep)' : '(Optional)' }}
-                            </span>
+                        <label for="patient_address" class="form-label">
+                            Address
                         </label>
-                        <PasswordInput
-                            id="patient_password"
-                            v-model="patientForm.password"
-                            autocomplete="new-password"
-                            placeholder="••••••••"
-                            :invalid="!!patientForm.errors.password"
+                        <Textarea
+                            id="patient_address"
+                            v-model="patientForm.address"
+                            rows="2"
+                            auto-resize
+                            fluid
+                            placeholder="Street address, apartment, or landmark..."
+                            :invalid="!!patientForm.errors.address"
                         />
-                        <InputError :message="patientForm.errors.password" />
+                        <InputError :message="patientForm.errors.address" />
                     </div>
-                </div>
-
-                <div class="field">
-                    <label for="patient_city" class="form-label">
-                        City
-                    </label>
-                    <InputText
-                        id="patient_city"
-                        v-model="patientForm.city"
-                        fluid
-                        placeholder="e.g., Mumbai"
-                        :invalid="!!patientForm.errors.city"
-                    />
-                    <InputError :message="patientForm.errors.city" />
-                </div>
-
-                <div class="field">
-                    <label for="patient_address" class="form-label">
-                        Address
-                    </label>
-                    <Textarea
-                        id="patient_address"
-                        v-model="patientForm.address"
-                        rows="2"
-                        auto-resize
-                        fluid
-                        placeholder="Street address, apartment, or landmark..."
-                        :invalid="!!patientForm.errors.address"
-                    />
-                    <InputError :message="patientForm.errors.address" />
-                </div>
+                </template>
 
                 <div class="dialog-footer">
                     <Button
@@ -1406,7 +1544,13 @@ function submitPatientForm(): void {
                     />
                     <Button
                         type="submit"
-                        :label="isEditingPatient ? 'Save Changes' : 'Create Patient'"
+                        :label="
+                            isEditingPatient
+                                ? 'Save Changes'
+                                : isAddingAsDependent
+                                  ? 'Create Dependent'
+                                  : 'Create Patient'
+                        "
                         icon="pi pi-check"
                         severity="primary"
                         class="flat-btn"
@@ -2131,5 +2275,66 @@ function submitPatientForm(): void {
 .patient-directory-dependent-chip:hover {
     background: #dcfce7;
     border-color: #86efac;
+}
+
+.patient-mode-switcher {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+    padding: 0.25rem;
+    background: var(--surface-ground);
+    border: 1px solid var(--surface-border);
+    border-radius: 0.6rem;
+}
+
+.patient-mode-switcher__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 0.45rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary-color);
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s ease;
+}
+
+.patient-mode-switcher__btn:hover {
+    color: var(--text-color);
+}
+
+.patient-mode-switcher__btn.is-active {
+    background: #0c6e72;
+    color: #ffffff;
+    box-shadow: 0 1px 3px rgba(12, 110, 114, 0.25);
+}
+
+.dependent-parent-box {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.85rem 1rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgba(12, 110, 114, 0.28);
+    background: rgba(12, 110, 114, 0.04);
+}
+
+.dependent-parent-box__hint {
+    margin: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #0c6e72;
+    line-height: 1.4;
+}
+
+.form-row--single {
+    grid-template-columns: 1fr !important;
 }
 </style>

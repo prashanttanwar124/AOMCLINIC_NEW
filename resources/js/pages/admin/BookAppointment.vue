@@ -196,6 +196,10 @@ const selectDependentForBooking = (child: any) => {
 const createPatientDialogVisible = ref(false);
 const createPatientSubmitting = ref(false);
 const createPatientErrors = ref<Record<string, string>>({});
+const isNewPatientDependent = ref(false);
+const selectedParentForDependent = ref<any>(null);
+const parentPatientSuggestions = ref<any[]>([]);
+
 const newPatientForm = reactive({
     name: '',
     phone: '',
@@ -203,6 +207,7 @@ const newPatientForm = reactive({
     date_of_birth: '',
     city: '',
     address: '',
+    parent_id: null as number | null,
 });
 
 const genderOptions = [
@@ -211,6 +216,53 @@ const genderOptions = [
     { label: 'Other', value: 'other' },
 ];
 
+const searchParentPatients = async (event: { query: string }) => {
+    try {
+        const { data } = await http.get(PatientController.search().url, {
+            params: { query: event.query },
+        });
+        parentPatientSuggestions.value = (data || []).filter((p: any) => !p.parent_id);
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+const setNewPatientDependentMode = (asDependent: boolean): void => {
+    isNewPatientDependent.value = asDependent;
+    createPatientErrors.value = {};
+    if (asDependent) {
+        if (
+            selectedPatient.value &&
+            typeof selectedPatient.value === 'object' &&
+            selectedPatient.value.id &&
+            !selectedPatient.value.parent_id
+        ) {
+            selectedParentForDependent.value = selectedPatient.value;
+            newPatientForm.parent_id = selectedPatient.value.id;
+        } else {
+            selectedParentForDependent.value = null;
+            newPatientForm.parent_id = null;
+        }
+        newPatientForm.phone = '';
+        newPatientForm.city = '';
+        newPatientForm.address = '';
+    } else {
+        selectedParentForDependent.value = null;
+        newPatientForm.parent_id = null;
+    }
+};
+
+watch(selectedParentForDependent, (val) => {
+    if (!isNewPatientDependent.value) {
+        return;
+    }
+    if (val && typeof val === 'object' && 'id' in val) {
+        newPatientForm.parent_id = val.id;
+    } else {
+        newPatientForm.parent_id = null;
+    }
+});
+
 const openCreatePatientModal = (): void => {
     newPatientForm.name = '';
     newPatientForm.phone = '';
@@ -218,11 +270,21 @@ const openCreatePatientModal = (): void => {
     newPatientForm.date_of_birth = '';
     newPatientForm.city = '';
     newPatientForm.address = '';
+    newPatientForm.parent_id = null;
+    isNewPatientDependent.value = false;
+    selectedParentForDependent.value = null;
     createPatientErrors.value = {};
     createPatientDialogVisible.value = true;
 };
 
 const submitNewPatient = async (): Promise<void> => {
+    if (isNewPatientDependent.value && !newPatientForm.parent_id) {
+        createPatientErrors.value = {
+            parent_id: 'Please select a primary account holder for this dependent.',
+        };
+        return;
+    }
+
     createPatientSubmitting.value = true;
     createPatientErrors.value = {};
 
@@ -643,14 +705,60 @@ const submit = (): void => {
         <!-- Quick Create Patient Dialog -->
         <Dialog
             v-model:visible="createPatientDialogVisible"
-            header="Add New Patient"
+            :header="isNewPatientDependent ? 'Add Dependent Patient' : 'Add New Patient'"
             modal
             :style="{ width: '32rem', maxWidth: '95vw' }"
         >
             <form class="quick-patient-form" @submit.prevent="submitNewPatient">
-                <div class="booking-form-grid">
+                <div class="patient-mode-switcher">
+                    <button
+                        type="button"
+                        class="patient-mode-switcher__btn"
+                        :class="{ 'is-active': !isNewPatientDependent }"
+                        @click="setNewPatientDependentMode(false)"
+                    >
+                        <i class="pi pi-user"></i>
+                        <span>Primary Patient</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="patient-mode-switcher__btn"
+                        :class="{ 'is-active': isNewPatientDependent }"
+                        @click="setNewPatientDependentMode(true)"
+                    >
+                        <i class="pi pi-users"></i>
+                        <span>Add as Dependent</span>
+                    </button>
+                </div>
+
+                <div v-if="isNewPatientDependent" class="dependent-parent-box">
                     <div class="field">
-                        <label for="qp_name">Full Name *</label>
+                        <label for="qp_parent">Primary Account Holder (Parent) *</label>
+                        <AutoComplete
+                            id="qp_parent"
+                            v-model="selectedParentForDependent"
+                            :suggestions="parentPatientSuggestions"
+                            option-label="label"
+                            placeholder="Search parent by name, phone, or ID..."
+                            fluid
+                            @complete="searchParentPatients"
+                        />
+                        <InputError :message="createPatientErrors.parent_id" />
+                    </div>
+                    <p class="dependent-parent-box__hint">
+                        <i class="pi pi-info-circle"></i>
+                        Phone number, city, and address will be inherited automatically from the parent account.
+                    </p>
+                </div>
+
+                <div
+                    class="booking-form-grid"
+                    :class="{ 'booking-form-grid--single': isNewPatientDependent }"
+                >
+                    <div class="field">
+                        <label for="qp_name">
+                            {{ isNewPatientDependent ? 'Dependent Full Name *' : 'Full Name *' }}
+                        </label>
                         <InputText
                             id="qp_name"
                             v-model="newPatientForm.name"
@@ -660,7 +768,7 @@ const submit = (): void => {
                         />
                         <InputError :message="createPatientErrors.name" />
                     </div>
-                    <div class="field">
+                    <div v-if="!isNewPatientDependent" class="field">
                         <label for="qp_phone">Phone Number *</label>
                         <InputText
                             id="qp_phone"
@@ -696,7 +804,7 @@ const submit = (): void => {
                         />
                     </div>
                 </div>
-                <div class="booking-form-grid">
+                <div v-if="!isNewPatientDependent" class="booking-form-grid">
                     <div class="field">
                         <label for="qp_city">City</label>
                         <InputText
@@ -726,7 +834,7 @@ const submit = (): void => {
                     />
                     <Button
                         type="submit"
-                        label="Create & Select Patient"
+                        :label="isNewPatientDependent ? 'Create & Select Dependent' : 'Create & Select Patient'"
                         icon="pi pi-check"
                         :loading="createPatientSubmitting"
                     />
@@ -1145,5 +1253,66 @@ const submit = (): void => {
     gap: 0.6rem;
     padding-top: 0.75rem;
     border-top: 1px solid var(--surface-border);
+}
+
+.patient-mode-switcher {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+    padding: 0.25rem;
+    background: var(--surface-ground);
+    border: 1px solid var(--surface-border);
+    border-radius: 0.6rem;
+}
+
+.patient-mode-switcher__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 0.45rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary-color);
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s ease;
+}
+
+.patient-mode-switcher__btn:hover {
+    color: var(--text-color);
+}
+
+.patient-mode-switcher__btn.is-active {
+    background: #0c6e72;
+    color: #ffffff;
+    box-shadow: 0 1px 3px rgba(12, 110, 114, 0.25);
+}
+
+.dependent-parent-box {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.85rem 1rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgba(12, 110, 114, 0.28);
+    background: rgba(12, 110, 114, 0.04);
+}
+
+.dependent-parent-box__hint {
+    margin: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #0c6e72;
+    line-height: 1.4;
+}
+
+.booking-form-grid--single {
+    grid-template-columns: 1fr !important;
 }
 </style>

@@ -47,7 +47,7 @@ class Patient extends Authenticatable
     }
 
     /**
-     * Format a text value so the first letter of each word is capitalized.
+     * Format a text value so HTML tags are stripped and the first letter of each word is capitalized.
      */
     public static function formatTitleCase(?string $value): ?string
     {
@@ -55,7 +55,8 @@ class Patient extends Authenticatable
             return null;
         }
 
-        $cleaned = preg_replace('/[ \t]+/', ' ', trim($value)) ?? trim($value);
+        $stripped = str_replace(['<', '>'], '', strip_tags($value));
+        $cleaned = preg_replace('/[ \t]+/', ' ', trim($stripped)) ?? trim($stripped);
 
         if ($cleaned === '') {
             return '';
