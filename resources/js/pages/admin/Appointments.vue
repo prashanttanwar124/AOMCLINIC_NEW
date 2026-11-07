@@ -862,6 +862,7 @@ function queueStatusSeverity(
                                 date-format="yy-mm-dd"
                                 placeholder="yyyy-mm-dd"
                                 show-icon
+                                icon-display="input"
                                 show-clear
                                 class="date-range-picker"
                                 @update:model-value="onCustomDateChange"
@@ -876,6 +877,7 @@ function queueStatusSeverity(
                                 placeholder="yyyy-mm-dd"
                                 :min-date="dateFromFilter ?? undefined"
                                 show-icon
+                                icon-display="input"
                                 show-clear
                                 class="date-range-picker"
                                 @update:model-value="onCustomDateChange"
@@ -1655,7 +1657,7 @@ function queueStatusSeverity(
 .date-input-wrap {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.45rem;
 }
 
 .date-input-label {
@@ -1664,10 +1666,19 @@ function queueStatusSeverity(
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-secondary-color);
+    white-space: nowrap;
 }
 
 .date-range-picker {
-    width: 10.5rem;
+    width: 11rem;
+}
+
+.date-range-picker :deep(.p-datepicker-input) {
+    padding-right: 3.6rem !important;
+}
+
+.date-range-picker :deep(.p-datepicker-clear-icon) {
+    right: 2.15rem !important;
 }
 
 .date-range-sep {

@@ -142,6 +142,7 @@ type EditableKey = keyof EditableAppointment;
 const props = defineProps<{
     visible: boolean;
     appointment: AppointmentCard | null;
+    saveToCurrentAppointment?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -502,6 +503,36 @@ function toDateString(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
+const todayIso = toDateString(new Date());
+
+const sortedHistory = computed<AppointmentHistoryItem[]>(() => {
+    const history = props.appointment?.history ?? [];
+    const currentId = props.appointment?.id;
+
+    return [...history].sort((a, b) => {
+        const aIsToday = a.appointmentDate === todayIso ? 1 : 0;
+        const bIsToday = b.appointmentDate === todayIso ? 1 : 0;
+        if (aIsToday !== bIsToday) {
+            return bIsToday - aIsToday;
+        }
+
+        const aIsCurrent = a.id === currentId ? 1 : 0;
+        const bIsCurrent = b.id === currentId ? 1 : 0;
+        if (aIsCurrent !== bIsCurrent) {
+            return bIsCurrent - aIsCurrent;
+        }
+
+        const dateCmp = (b.appointmentDate ?? '').localeCompare(
+            a.appointmentDate ?? '',
+        );
+        if (dateCmp !== 0) {
+            return dateCmp;
+        }
+
+        return b.id - a.id;
+    });
+});
+
 const activeHistoryAppointmentId = ref<number | null>(null);
 
 const activeHistoryAppointment = computed<AppointmentHistoryItem | null>(() => {
@@ -522,7 +553,11 @@ watch(
             return;
         }
         if (appointment.id !== oldAppointment?.id) {
-            activeHistoryAppointmentId.value = appointment.id;
+            const todayHistoryItem = sortedHistory.value.find(
+                (h) => h.appointmentDate === todayIso,
+            );
+            activeHistoryAppointmentId.value =
+                todayHistoryItem?.id ?? appointment.id;
             activeFormSectionIndex.value = 0;
         }
     },
@@ -546,7 +581,11 @@ watch(
             }
             return;
         }
-        formDefaults = { ...historyApt.editable };
+        const baseDefaults =
+            props.saveToCurrentAppointment && props.appointment
+                ? props.appointment.editable
+                : historyApt.editable;
+        formDefaults = { ...baseDefaults };
         Object.assign(form, historyApt.editable);
         form.errors = {};
     },
@@ -648,7 +687,9 @@ async function submitForm(complete: boolean): Promise<void> {
     form.errors = {};
 
     try {
-        const targetId = activeHistoryAppointmentId.value ?? appointment.id;
+        const targetId = props.saveToCurrentAppointment
+            ? appointment.id
+            : (activeHistoryAppointmentId.value ?? appointment.id);
         const { data } = await http.patch(updateAction(targetId).url, {
             ...formData(),
             complete,
@@ -789,20 +830,42 @@ function queueStatusSeverity(
                 </div>
             </div>
 
-            <div v-if="props.appointment.history && props.appointment.history.length" class="booking-patient-history">
-                <span class="history-section-title">Patient Appointments History</span>
+            <div v-if="sortedHistory.length" class="booking-patient-history">
+                <div class="history-section-header">
+                    <span class="history-section-title">Patient Appointments History</span>
+                    <span
+                        v-if="
+                            props.saveToCurrentAppointment &&
+                            activeHistoryAppointmentId &&
+                            activeHistoryAppointmentId !== props.appointment.id
+                        "
+                        class="history-save-target-badge"
+                    >
+                        <i class="pi pi-info-circle"></i>
+                        Viewing past visit ({{ activeHistoryAppointment?.appointmentDateLabel }}) — edits will save to Today's Appointment
+                    </span>
+                </div>
                 <div class="history-chips-container">
                     <button
-                        v-for="apt in props.appointment.history"
+                        v-for="apt in sortedHistory"
                         :key="apt.id"
                         type="button"
                         class="history-chip"
                         :class="{
                             'is-active': activeHistoryAppointmentId === apt.id,
+                            'is-today': apt.appointmentDate === todayIso,
                         }"
                         @click="activeHistoryAppointmentId = apt.id"
                     >
-                        <span class="history-chip__date">{{ apt.appointmentDateLabel }}</span>
+                        <span class="history-chip__date">
+                            {{ apt.appointmentDateLabel }}
+                            <span
+                                v-if="apt.appointmentDate === todayIso"
+                                class="history-chip__today-badge"
+                            >
+                                Today
+                            </span>
+                        </span>
                         <span class="history-chip__meta">
                             {{ apt.session }} · {{ apt.appointmentType }}
                             <i v-if="apt.status?.toLowerCase() === 'complete'" class="pi pi-check-circle history-chip__completed-icon ml-1"></i>
@@ -1140,12 +1203,45 @@ function queueStatusSeverity(
     margin-top: 1rem;
 }
 
+.history-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
 .history-section-title {
     color: var(--text-color-secondary);
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     font-weight: 600;
+}
+
+.history-save-target-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: color-mix(in srgb, var(--p-primary-500) 12%, var(--surface-card));
+    color: var(--p-primary-700);
+    border: 1px solid color-mix(in srgb, var(--p-primary-500) 30%, transparent);
+}
+
+.history-chip__today-badge {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.08rem 0.42rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    background: color-mix(in srgb, #10b981 16%, var(--surface-card));
+    color: #059669;
 }
 
 .history-chips-container {

@@ -739,6 +739,7 @@ useEchoPublic('live-queue', 'QueueUpdated', () => {
         <AppointmentDetailsDialog
             v-model:visible="detailDialogVisible"
             :appointment="selectedAppointment"
+            save-to-current-appointment
             @saved="onDialogSaved"
         />
     </div>

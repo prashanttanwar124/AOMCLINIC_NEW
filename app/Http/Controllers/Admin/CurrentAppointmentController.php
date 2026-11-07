@@ -224,7 +224,13 @@ class CurrentAppointmentController extends Controller
         };
 
         $patientAppointments = $patient?->appointments ?? collect();
-        $patientAppointments = $patientAppointments->sortBy('appointment_date')->values();
+        $patientAppointments = $patientAppointments
+            ->sortByDesc(fn (Appointment $apt): array => [
+                $apt->id === $appointment->id ? 1 : 0,
+                $apt->appointment_date?->toDateString() ?? '',
+                $apt->id,
+            ])
+            ->values();
 
         $history = $patientAppointments->map(fn (Appointment $apt): array => [
             'id' => $apt->id,

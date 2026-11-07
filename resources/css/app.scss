@@ -1879,6 +1879,20 @@ select,
     border-radius: var(--content-border-radius);
 }
 
+.p-datepicker:has(.p-datepicker-dropdown) .p-datepicker-input {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+}
+
+.p-datepicker-dropdown {
+    border: 1px solid var(--surface-border);
+    border-left: 0;
+    background: var(--surface-card);
+    color: var(--text-secondary-color);
+    border-start-end-radius: var(--content-border-radius);
+    border-end-end-radius: var(--content-border-radius);
+}
+
 .p-divider-content {
     background: var(--surface-card);
 }
