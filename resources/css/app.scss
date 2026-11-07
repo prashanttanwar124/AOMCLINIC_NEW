@@ -2297,13 +2297,18 @@ select,
 .booking-current__identity h3,
 .booking-queue-card__top h4,
 .appointment-patient-name,
+.appointment-patient-name-btn,
 .queue-patient-name,
 .patient-name,
+.p-name,
+.admin-person-cell strong,
 .booking-detail-identity__profile h3,
 .booking-current__reason,
 .booking-queue-card__top p,
 .booking-queue-card p,
-.booking-detail-identity__profile p {
+.booking-detail-identity__profile p,
+.clinical-cell__diag,
+.clinical-cell__complaint {
     text-transform: capitalize !important;
 }
 

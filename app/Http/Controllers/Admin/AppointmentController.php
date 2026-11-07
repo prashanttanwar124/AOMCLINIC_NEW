@@ -127,34 +127,6 @@ class AppointmentController extends Controller
             };
         }
 
-        $dateBreakdown = (clone $query)
-            ->selectRaw("
-                DATE(appointment_date) as date_val,
-                COUNT(*) as total,
-                SUM(CASE WHEN slot = 'M' THEN 1 ELSE 0 END) as morning,
-                SUM(CASE WHEN slot = 'E' THEN 1 ELSE 0 END) as evening,
-                SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'complete' THEN 1 ELSE 0 END) as complete,
-                SUM(CASE WHEN on_hold = 1 AND LOWER(COALESCE(status, '')) != 'complete' THEN 1 ELSE 0 END) as on_hold,
-                SUM(CASE WHEN (on_hold = 0 OR on_hold IS NULL) AND LOWER(COALESCE(status, '')) != 'complete' THEN 1 ELSE 0 END) as pending,
-                COALESCE(SUM(amount), 0) as revenue
-            ")
-            ->groupByRaw('DATE(appointment_date)')
-            ->orderByDesc('date_val')
-            ->limit(14)
-            ->get()
-            ->map(fn ($row) => [
-                'date' => (string) $row->date_val,
-                'total' => (int) $row->total,
-                'morning' => (int) $row->morning,
-                'evening' => (int) $row->evening,
-                'complete' => (int) $row->complete,
-                'on_hold' => (int) $row->on_hold,
-                'pending' => (int) $row->pending,
-                'revenue' => (float) $row->revenue,
-            ])
-            ->values()
-            ->all();
-
         $paginated = $query->with([
             'patient:id,name,email,phone,country_calling_code,date_of_birth,gender,city,address',
             'patient.appointments',
@@ -331,7 +303,6 @@ class AppointmentController extends Controller
         return Inertia::render('admin/Appointments', [
             'appointments' => $paginated,
             'summary' => $summary,
-            'dateBreakdown' => $dateBreakdown,
             'filters' => [
                 'search' => $search,
                 'status' => $status,

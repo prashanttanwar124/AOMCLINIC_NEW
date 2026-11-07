@@ -68,3 +68,26 @@ test('admin can update an existing patient profile', function () {
         ->and($patient->gender)->toBe('female')
         ->and($patient->city)->toBe('Mumbai');
 });
+
+test('patient name, city, and address are normalized and stored in title case', function () {
+    $staff = User::factory()->create();
+
+    $this->actingAs($staff)->post(route('admin.patients.store'), [
+        'name' => '  prashant   TANWAR ',
+        'email' => 'prashant@example.com',
+        'phone' => '9876543210',
+        'gender' => 'male',
+        'city' => 'vasai west',
+        'address' => '14 LAKE view road',
+    ])->assertRedirect();
+
+    $patient = Patient::query()->where('email', 'prashant@example.com')->first();
+
+    expect($patient)->not->toBeNull()
+        ->and($patient->getRawOriginal('name'))->toBe('Prashant Tanwar')
+        ->and($patient->name)->toBe('Prashant Tanwar')
+        ->and($patient->getRawOriginal('city'))->toBe('Vasai West')
+        ->and($patient->city)->toBe('Vasai West')
+        ->and($patient->getRawOriginal('address'))->toBe('14 Lake View Road')
+        ->and($patient->address)->toBe('14 Lake View Road');
+});

@@ -6,6 +6,7 @@ use Database\Factories\PatientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -43,6 +44,54 @@ class Patient extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Format a text value so the first letter of each word is capitalized.
+     */
+    public static function formatTitleCase(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $cleaned = preg_replace('/[ \t]+/', ' ', trim($value)) ?? trim($value);
+
+        if ($cleaned === '') {
+            return '';
+        }
+
+        return mb_convert_case($cleaned, MB_CASE_TITLE, 'UTF-8');
+    }
+
+    /**
+     * Normalize patient name in Title Case when saving to the database.
+     */
+    protected function name(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => self::formatTitleCase($value),
+        );
+    }
+
+    /**
+     * Normalize patient city in Title Case when saving to the database.
+     */
+    protected function city(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => self::formatTitleCase($value),
+        );
+    }
+
+    /**
+     * Normalize patient address in Title Case when saving to the database.
+     */
+    protected function address(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => self::formatTitleCase($value),
+        );
     }
 
     /**

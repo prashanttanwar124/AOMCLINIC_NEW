@@ -170,21 +170,9 @@ defineOptions({
     },
 });
 
-type DateBreakdownItem = {
-    date: string;
-    total: number;
-    morning: number;
-    evening: number;
-    complete: number;
-    on_hold: number;
-    pending: number;
-    revenue: number;
-};
-
 const props = defineProps<{
     appointments: PaginatedAppointments;
     summary?: AppointmentsSummary;
-    dateBreakdown?: DateBreakdownItem[];
     filters: {
         search: string | null;
         status?: string | null;
@@ -287,13 +275,13 @@ const medicineStatusOptions = [
 ];
 
 const datePresets = [
-    { label: 'All Dates', value: null, icon: 'pi pi-calendar' },
-    { label: 'Today', value: 'today', icon: 'pi pi-bolt' },
-    { label: 'Yesterday', value: 'yesterday', icon: 'pi pi-history' },
-    { label: 'This Week', value: 'this_week', icon: 'pi pi-calendar-plus' },
-    { label: 'Last 7 Days', value: 'last_7_days', icon: 'pi pi-clock' },
-    { label: 'This Month', value: 'this_month', icon: 'pi pi-calendar-times' },
-    { label: 'Last 30 Days', value: 'last_30_days', icon: 'pi pi-chart-line' },
+    { label: 'All Dates', value: null },
+    { label: 'Today', value: 'today' },
+    { label: 'Yesterday', value: 'yesterday' },
+    { label: 'This Week', value: 'this_week' },
+    { label: 'Last 7 Days', value: 'last_7_days' },
+    { label: 'This Month', value: 'this_month' },
+    { label: 'Last 30 Days', value: 'last_30_days' },
 ];
 
 const computedSummary = computed<AppointmentsSummary>(() => {
@@ -506,15 +494,6 @@ function toggleStatusFilter(
     applyFilters();
 }
 
-function toggleSessionFilter(session: 'Morning' | 'Evening' | null): void {
-    if (session === null || sessionFilter.value === session) {
-        sessionFilter.value = null;
-    } else {
-        sessionFilter.value = session;
-    }
-    applyFilters();
-}
-
 function resetAllFilters(): void {
     searchQuery.value = '';
     statusFilter.value = null;
@@ -597,56 +576,7 @@ function formatFullWeekdayDate(dateStr: string): string {
     }).format(parsed);
 }
 
-function formatShortCardWeekday(dateStr: string): string {
-    if (dateStr === todayIso) {
-        return 'Today';
-    }
-    const parsed = parseLocalDate(dateStr);
-    if (!parsed) {
-        return '';
-    }
-    return new Intl.DateTimeFormat('en-IN', { weekday: 'short' }).format(parsed);
-}
-
-function formatShortCardDay(dateStr: string): string {
-    const parsed = parseLocalDate(dateStr);
-    if (!parsed) {
-        return dateStr;
-    }
-    return new Intl.DateTimeFormat('en-IN', {
-        day: '2-digit',
-        month: 'short',
-    }).format(parsed);
-}
-
-function selectSpecificDate(dateStr: string): void {
-    const currentFrom = toDateString(dateFromFilter.value);
-    const currentTo = toDateString(dateToFilter.value);
-    if (currentFrom === dateStr && currentTo === dateStr && !datePresetFilter.value) {
-        dateFromFilter.value = null;
-        dateToFilter.value = null;
-    } else {
-        datePresetFilter.value = null;
-        dateFromFilter.value = parseLocalDate(dateStr);
-        dateToFilter.value = parseLocalDate(dateStr);
-    }
-    applyFilters();
-}
-
-function isDateSelected(dateStr: string): boolean {
-    const currentFrom = toDateString(dateFromFilter.value);
-    const currentTo = toDateString(dateToFilter.value);
-    if (datePresetFilter.value === 'today' && dateStr === todayIso) {
-        return true;
-    }
-    return currentFrom === dateStr && currentTo === dateStr;
-}
-
 function getDateGroupStats(dateStr: string) {
-    const fromServer = props.dateBreakdown?.find((d) => d.date === dateStr);
-    if (fromServer) {
-        return fromServer;
-    }
     const rows = props.appointments.data.filter(
         (r) => r.appointmentDate === dateStr,
     );
@@ -656,9 +586,7 @@ function getDateGroupStats(dateStr: string) {
         morning: rows.filter((r) => r.session === 'Morning').length,
         evening: rows.filter((r) => r.session === 'Evening').length,
         complete: rows.filter((r) => r.queueStatus === 'complete').length,
-        on_hold: rows.filter((r) => r.queueStatus === 'on_hold').length,
         pending: rows.filter((r) => r.queueStatus === 'pending').length,
-        revenue: rows.reduce((s, r) => s + Number(r.amount ?? 0), 0),
     };
 }
 
@@ -1036,52 +964,6 @@ function queueStatusSeverity(
                             class="btn-auto"
                             @click="resetAllFilters"
                         />
-                    </div>
-                </div>
-
-                <!-- Date-Wise Breakdown Strip -->
-                <div
-                    v-if="props.dateBreakdown && props.dateBreakdown.length > 0"
-                    class="date-breakdown-strip"
-                >
-                    <div class="date-breakdown-strip__header">
-                        <span class="date-breakdown-strip__title">
-                            <i class="pi pi-calendar"></i>
-                            Date-Wise Schedule Breakdown (click any date to filter)
-                        </span>
-                    </div>
-                    <div class="date-breakdown-cards">
-                        <button
-                            v-for="day in props.dateBreakdown"
-                            :key="day.date"
-                            type="button"
-                            class="date-breakdown-card"
-                            :class="{
-                                'is-selected': isDateSelected(day.date),
-                                'is-today': day.date === todayIso,
-                            }"
-                            @click="selectSpecificDate(day.date)"
-                        >
-                            <div class="date-breakdown-card__top">
-                                <span class="date-breakdown-card__weekday">
-                                    {{ formatShortCardWeekday(day.date) }}
-                                </span>
-                                <span class="date-breakdown-card__total">
-                                    {{ day.total }} {{ day.total === 1 ? 'visit' : 'visits' }}
-                                </span>
-                            </div>
-                            <strong class="date-breakdown-card__date">
-                                {{ formatShortCardDay(day.date) }}
-                            </strong>
-                            <div class="date-breakdown-card__slots">
-                                <span title="Morning Session">
-                                    <i class="pi pi-sun"></i> {{ day.morning }}
-                                </span>
-                                <span title="Evening Session">
-                                    <i class="pi pi-moon"></i> {{ day.evening }}
-                                </span>
-                            </div>
-                        </button>
                     </div>
                 </div>
 
@@ -1941,6 +1823,7 @@ function queueStatusSeverity(
     color: var(--text-color);
     font-weight: 700;
     cursor: pointer;
+    text-transform: capitalize;
 }
 
 .appointment-patient-name-btn:hover {
@@ -2115,93 +1998,6 @@ function queueStatusSeverity(
     background: #0c6e72;
     color: #ffffff;
     box-shadow: 0 1px 3px rgba(12, 110, 114, 0.25);
-}
-
-.date-breakdown-strip {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--surface-border);
-    display: grid;
-    gap: 0.5rem;
-}
-
-.date-breakdown-strip__title {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.76rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-secondary-color);
-}
-
-.date-breakdown-cards {
-    display: flex;
-    gap: 0.5rem;
-    overflow-x: auto;
-    padding-bottom: 0.25rem;
-}
-
-.date-breakdown-card {
-    min-width: 7.75rem;
-    flex-shrink: 0;
-    padding: 0.55rem 0.7rem;
-    border-radius: 0.6rem;
-    border: 1px solid var(--surface-border);
-    background: var(--surface-ground);
-    text-align: left;
-    cursor: pointer;
-    display: grid;
-    gap: 0.2rem;
-    transition: all 0.15s ease;
-}
-
-.date-breakdown-card:hover {
-    border-color: #0c6e72;
-    transform: translateY(-1px);
-}
-
-.date-breakdown-card.is-today {
-    border-color: rgba(12, 110, 114, 0.4);
-    background: rgba(12, 110, 114, 0.04);
-}
-
-.date-breakdown-card.is-selected {
-    background: #0c6e72;
-    border-color: #0c6e72;
-    color: #ffffff;
-}
-
-.date-breakdown-card__top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.35rem;
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: var(--text-secondary-color);
-}
-
-.date-breakdown-card.is-selected .date-breakdown-card__top,
-.date-breakdown-card.is-selected .date-breakdown-card__date,
-.date-breakdown-card.is-selected .date-breakdown-card__slots {
-    color: #ffffff;
-}
-
-.date-breakdown-card__date {
-    font-size: 0.92rem;
-    font-weight: 800;
-    color: var(--text-color);
-}
-
-.date-breakdown-card__slots {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--text-secondary-color);
 }
 
 .date-group-subheader {
